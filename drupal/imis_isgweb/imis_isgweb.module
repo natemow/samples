@@ -1,0 +1,767 @@
+<?php
+/**
+ * @file
+ * Main module code.
+ */
+
+
+// Private utility functions
+
+/**
+ * Wrapper function for variable_get that sets default values.
+ *
+ * @param $key
+ *    The variable.name key to retrieve.
+ *
+ * @return
+ *    variable.value
+ *
+ */
+function _imis_isgweb_variable_get($key) {
+  $vars = array(
+      'imis_isgweb_allow_login_failover' => TRUE,
+      'imis_isgweb_use_iframes' => TRUE,
+      'imis_isgweb_ui_root'          => 'https://isgweb.example.com/test',
+      'imis_isgweb_wsdl_root'          => 'http://iservices.example.com/test',
+      'imis_isgweb_wsdl_key_Authentication'  => '00000000-0000-0000-0000-000000000000',
+      'imis_isgweb_wsdl_key_DataAccess'    => '00000000-0000-0000-0000-000000000000',
+      'imis_isgweb_ssl_domain'        => 'www.example.com',
+      'imis_isgweb_title_profile'        => 'MyOrgAcronym',
+  );
+
+  if (!empty($key)) {
+    return trim(variable_get($key, $vars[$key]), '/');
+  }
+
+  return $vars;
+}
+
+
+/**
+ * Get PHP session variable.
+ *
+ * @param $key
+ *    The session key to retrieve.
+ *
+ * @return
+ *    The session value.
+ *
+ */
+function _imis_isgweb_session_read($key) {
+  return $_SESSION[$key];
+}
+
+
+/**
+ * Set PHP session variable.
+ *
+ * @param $key
+ *    The session key to set.
+ *
+ * @param $data
+ *    The session value to set.
+ *
+ * @return
+ *    The session value.
+ *
+ */
+function _imis_isgweb_session_write($key, $data) {
+  $_SESSION[$key] = $data;
+
+  return _imis_isgweb_session_read($key);
+}
+
+
+/**
+ * Shortcut function to instantiate the ISGwebWrapper class.
+ *
+ * @return
+ *    A new instance of the ISGwebWrapper class.
+ *
+ */
+function _imis_isgweb_instance() {
+  return new ISGwebWrapper(
+  _imis_isgweb_variable_get('imis_isgweb_wsdl_root'),
+  array(
+              'Authentication'  => _imis_isgweb_variable_get('imis_isgweb_wsdl_key_Authentication'),
+              'DataAccess'    => _imis_isgweb_variable_get('imis_isgweb_wsdl_key_DataAccess')
+  ),
+  _imis_isgweb_variable_get('imis_isgweb_ui_root')
+  );
+}
+
+
+/**
+ * Sync an individual user's data from ISGweb to Drupal.
+ * Called after successful authentication as well as during the full user sync.
+ *
+ * @param &$user
+ *    The referenced Drupal user account to sync.
+ *
+ * @param $data
+ *    The data returned from the ISGwebWrapper class web service call.
+ *
+ */
+function _imis_isgweb_sync(&$user, &$data) {
+
+  // Get populated user record from iMIS
+  // Note that drupal_imis_isgweb_sync is also called from _imis_isgweb_sync_all ...so $data may already be populated with this info
+  if (!array_key_exists('LAST_UPDATED', $data)) {
+    $isgweb  = _imis_isgweb_instance();
+    $update  = $isgweb->ExecuteStoredProcedure('drupal_imis_isgweb_sync', "'" . $data['ID'] . "',''");
+
+    if (!$update) {
+      for ($i=0; $i < count($isgweb->errors); $i++) {
+        watchdog('imis_isgweb', 'Sync error: @error. ', array('@error' => $isgweb->errors[$i]), WATCHDOG_ERROR);
+      }
+
+      return;
+    }
+
+    $data = array_merge($data, $update['Users']['User']);
+  }
+
+
+  // Add/update the imis_isgweb record
+  if (!empty($user->uid)) {
+    $result = db_query("SELECT sid FROM {imis_isgweb} WHERE uid = %d AND imis_id = '%s'", array($user->uid, $data['ID']));
+    $sid    = 0;
+    while ($row = db_fetch_array($result)) {
+      $sid = $row['sid'];
+    }
+
+    if (!empty($sid)) {
+
+      db_query("UPDATE {imis_isgweb} SET imis_updated = %d, imis_logindisabled = %d, imis_weblogin = '%s', imis_email = '%s', imis_fname = '%s', imis_lname = '%s' WHERE sid = %d", array(
+      //strtotime($data['LAST_UPDATED']),
+      time(),
+      (!empty($data['LOGIN_DISABLED']) ? 1 : 0),
+      $data['WEB_LOGIN'],
+      $data['EMAIL'],
+      $data['FIRST_NAME'],
+      $data['LAST_NAME'],
+      $sid
+      ));
+
+    }
+    else {
+
+      db_query("INSERT INTO {imis_isgweb} (uid, imis_id, imis_updated, imis_logindisabled, imis_weblogin, imis_email, imis_fname, imis_lname) VALUES (%d, '%s', '%s', %d, '%s', '%s', '%s', '%s');", array(
+      $user->uid,
+      $data['ID'],
+      //strtotime($data['LAST_UPDATED']),
+      time(),
+      (!empty($data['LOGIN_DISABLED']) ? 1 : 0),
+      $data['WEB_LOGIN'],
+      $data['EMAIL'],
+      $data['FIRST_NAME'],
+      $data['LAST_NAME']
+      ));
+
+    }
+  }
+
+}
+
+
+/**
+ * Sync all users from ISGweb to Drupal.
+ * Called from the admin AHAH form as well as the hook_cron implementation.
+ *
+ * @param $last_updated
+ *    The date last updated string to send to ISGweb's stored procedures. If left empty, no filter will be applied and all users will be returned. Otherwise, the stored procedure will only return records updated since the supplied date.
+ *
+ * @return
+ *    A message string detailing the number of users that were synced.
+ *
+ */
+function _imis_isgweb_sync_all($last_updated = '') {
+  $output .= vsprintf('Sync started (%s). ', array(date('F j, Y, g:i a')));
+  watchdog('imis_isgweb', $output, NULL, WATCHDOG_INFO);
+
+  $isgweb   = _imis_isgweb_instance();
+  $data     = $isgweb->ExecuteStoredProcedure('drupal_imis_isgweb_sync', "'','" . $last_updated . "'");
+  $output   = '';
+  $counter  = 0;
+
+  if (!$data) {
+    for ($i=0; $i < count($isgweb->errors); $i++) {
+      $output .= $isgweb->errors[$i];
+      watchdog('imis_isgweb', 'Sync error: @error. ', array('@error' => $isgweb->errors[$i]), WATCHDOG_ERROR);
+    }
+
+    return $output;
+  }
+
+  variable_set('imis_isgweb_sync_completion', 15);
+
+  // Loop data returned from ISGweb
+  for ($i=0; $i < count($data['Users']['User']); $i++) {
+    $imis = $data['Users']['User'][$i];
+
+    if (!empty($imis['WEB_LOGIN'])) {
+      try {
+        // Get existing user
+        $user = user_load(array('name' => $imis['WEB_LOGIN']));
+
+        if (empty($user)) {
+          // User doesn't exist yet; add him
+          $userinfo = array(
+              'name'                 => $imis['WEB_LOGIN'],
+              'pass'                 => user_password(),
+              'mail'                 => $imis['EMAIL'],
+              'init'                 => $imis['WEB_LOGIN'],
+              'status'               => (empty($imis['LOGIN_DISABLED']) ? 1 : 0),
+              'authname_imis_isgweb' => $imis['WEB_LOGIN'],
+              'access'               => time()
+          );
+
+          $user = user_save('', $userinfo);
+        }
+
+        // Sync user data
+        _imis_isgweb_sync($user, $imis);
+
+        $counter++;
+        $percent = (($counter*100) / count($data['Users']['User']));
+        $percent = (($percent*85) / 100);
+        $percent = round((15+$percent), 5);
+        variable_set('imis_isgweb_sync_completion', $percent);
+      }
+      catch (Exception $ex) {
+        watchdog('imis_isgweb', 'Sync error: @error. ', array('@error' => $ex->getMessage()), WATCHDOG_ERROR);
+      }
+    }
+
+  }
+
+
+  // Disable users that are not included in the drupal_imis_isgweb_users result set
+  $data_disable = $isgweb->ExecuteStoredProcedure('drupal_imis_isgweb_sync_cleanup', "");
+
+  if (!$data_disable) {
+    for ($i=0; $i < count($isgweb->errors); $i++) {
+      $output .= $isgweb->errors[$i];
+      watchdog('imis_isgweb', 'Sync error (user cleanup): @error. ', array('@error' => $isgweb->errors[$i]), WATCHDOG_ERROR);
+    }
+  }
+  else {
+    $disable = array();
+    for ($i=0; $i < count($data_disable['Users']['User']); $i++) {
+      $disable[] = $data_disable['Users']['User'][$i]['ID'];
+    }
+
+    db_query("UPDATE {users} SET status = 0 WHERE uid IN (SELECT s.uid FROM {imis_isgweb} AS s WHERE s.imis_id NOT IN ('%s'))", array(
+    implode("','", $disable)
+    ));
+  }
+
+  variable_set('imis_isgweb_sync_completion', 100);
+  $output .= vsprintf('Sync all result (%s): %s users added or updated. ', array(date('F j, Y, g:i a'), $counter));
+  watchdog('imis_isgweb', $output, NULL, WATCHDOG_INFO);
+
+  return $output;
+}
+
+
+/**
+ * Handles output for all page callbacks defined in hook_menu_alter implementation.
+ *
+ * @return
+ *    The themed output for a page.
+ *
+ */
+function _imis_isgweb_pages() {
+
+  $args   = func_get_args();
+  $token  = _imis_isgweb_session_read('ISGWEB_TOKEN');
+  $return = url($_GET['q'], array('query' => drupal_get_destination(), 'absolute' => TRUE));
+  $isgweb = _imis_isgweb_instance();
+
+  global $user;
+
+  if (!empty($args)) {
+
+    if (!empty($user->uid) && !empty($token)) {
+      // Logged in
+      switch ($args[1]) {
+        case 'edit' :
+          $output = $isgweb->GetLink('profile_edit', $token, $return, TRUE);
+          break;
+        case 'iframe_resizer' :
+          $file    = realpath( drupal_get_path('module', 'imis_isgweb') . '/inc/iframe_resizer.html' );
+          $handle  = fopen($file, "r");
+          $output  = fread($handle, filesize($file));
+          fclose($handle);
+          print $output; die();
+          break;
+        default :
+          $output = $isgweb->GetLink('profile_view', $token, $return, TRUE);
+          break;
+      }
+    }
+    else {
+      // Not logged in
+      switch ($args[0]) {
+        case 'user_register' :
+          $output = $isgweb->GetLink('profile_register', $token, $return, TRUE);
+          break;
+        case 'user_pass' :
+          $output = $isgweb->GetLink('profile_password', $token, $return, TRUE);
+          break;
+        case 'user_login' :
+          $output = drupal_get_form('user_login');
+          break;
+        case 'iframe_resizer' :
+          $file    = realpath( drupal_get_path('module', 'imis_isgweb') . '/inc/iframe_resizer.html' );
+          $handle  = fopen($file, "r");
+          $output  = fread($handle, filesize($file));
+          fclose($handle);
+          print $output; die();
+          break;
+        default :
+          $output = print_r($args, TRUE);
+          break;
+      }
+    }
+
+  }
+
+  drupal_set_title( _imis_isgweb_variable_get('imis_isgweb_title_profile') );
+  return $output;
+}
+
+
+
+
+// Hook implementations
+
+/**
+ * Implements hook_init().
+ */
+function imis_isgweb_init() {
+  $path = drupal_get_path('module', 'imis_isgweb');
+
+  require_once($path . '/inc/nusoap/lib/nusoap.php');
+  require_once($path . '/inc/nusoap/lib/class.wsdlcache.php');
+  require_once($path . '/inc/class.isgweb_wrapper.php');
+}
+
+
+/**
+ * Implements hook_menu().
+ */
+function imis_isgweb_menu() {
+  $items = array();
+
+  $items['admin/user/imis_isgweb'] = array(
+      'title'             => 'iMIS ISGweb',
+      'description'       => 'Configure iMIS ISGweb integration settings.',
+      'page callback'     => 'drupal_get_form',
+      'page arguments'    => array('imis_isgweb_form_settings'),
+      'access callback'   => 'user_access',
+      'access arguments'  => array('administer users'),
+      'type'              => MENU_NORMAL_ITEM,
+      'weight'      => 0,
+  );
+
+  $local      = $items['admin/user/imis_isgweb'];
+  $local['title']  = 'Settings';
+  $local['type']  = MENU_DEFAULT_LOCAL_TASK;
+
+  $items['admin/user/imis_isgweb/settings'] = $local;
+
+  $items['admin/user/imis_isgweb/sync'] = array(
+      'title'             => 'Data Sync',
+      'description'       => 'Manually sync records from ISGweb to Drupal.',
+      'page callback'     => 'drupal_get_form',
+      'page arguments'    => array('imis_isgweb_form_sync'),
+      'access callback'   => 'user_access',
+      'access arguments'  => array('administer users'),
+      'type'              => MENU_LOCAL_TASK,
+      'weight'      => 1,
+  );
+
+  $items['admin/user/imis_isgweb/sync_js_message'] = array(
+      'page callback'    => 'imis_isgweb_form_sync_js_message',
+      'access callback'   => 'user_access',
+      'access arguments'  => array('administer users'),
+      'type'        => MENU_CALLBACK,
+  );
+
+  $items['admin/user/imis_isgweb/sync_js_interval'] = array(
+      'page callback'    => 'imis_isgweb_form_sync_js_interval',
+      'access callback'   => 'user_access',
+      'access arguments'  => array('administer users'),
+      'type'        => MENU_CALLBACK,
+  );
+
+  // Not sure what ISGweb uses this for (something in javascripts/iframe.js maybe?), but without this menu entry 404s get written to the log for each iframe request.
+  $items['ISGweb222x/Association/iframe_resizer.html'] = array(
+      'page callback' => '_imis_isgweb_pages',
+      'page arguments' => array('iframe_resizer'),
+      'access callback'   => 'user_access',
+      'access arguments'  => array('access content'),
+      'type'        => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+
+/**
+ * Implements hook_menu_alter().
+ */
+function imis_isgweb_menu_alter(&$items) {
+
+  $items['user']['page callback'] = '_imis_isgweb_pages';
+  $items['user']['page arguments'] = array('user_login');
+  unset($items['user']['file']);
+
+  $items['user/login']['page callback'] = '_imis_isgweb_pages';
+  $items['user/login']['page arguments'] = array('user_login');
+  unset($items['user/login']['file']);
+
+  $user_iframes = _imis_isgweb_variable_get('imis_isgweb_use_iframes');
+  if (!empty($user_iframes)) {
+
+    $items['user/register']['page callback'] = '_imis_isgweb_pages';
+    $items['user/register']['page arguments'] = array('user_register');
+    unset($items['user/register']['file']);
+
+    $items['user/%user_uid_optional']['page callback'] = '_imis_isgweb_pages';
+    unset($items['user/%user_uid_optional']['file']);
+
+    $items['user/%user_category/edit']['page callback'] = '_imis_isgweb_pages';
+    $items['user/%user_category/edit']['page arguments'] = array(1, 2);
+    unset($items['user/%user_category/edit']['file']);
+
+    $items['user/password']['page callback'] = '_imis_isgweb_pages';
+    $items['user/password']['page arguments'] = array('user_pass');
+    unset($items['user/password']['file']);
+
+  }
+}
+
+
+/**
+ * Implements hook_form_alter().
+ */
+function imis_isgweb_form_alter(&$form, &$form_state, $form_id) {
+  switch ($form_id) {
+    case 'user_login' :
+    case 'user_login_block' :
+
+      $form['#validate']  = array();
+      $form['#submit']    = array('imis_isgweb_form_login_submit');
+
+      break;
+  }
+}
+
+
+/**
+ * Implements hook_nodeapi().
+ */
+function imis_isgweb_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  switch ($op) {
+    case 'view' :
+
+      if (!empty($a4)) {
+
+        // Force SSL if domain match with variable AND any HTTPS iframe src URLs are found in node->body
+
+        $ssl_domain = _imis_isgweb_variable_get('imis_isgweb_ssl_domain');
+
+        if (!empty($ssl_domain) && $ssl_domain == $_SERVER['HTTP_HOST']) {
+          $isgweb_ssl = FALSE;
+
+          preg_match('/src=([\'"])?(.*?)\\1/', $node->body, $matches);
+
+          for ($i=0; $i < count($matches); $i++) {
+            if (stripos($matches[$i], 'https://isgweb.')) {
+              $isgweb_ssl = TRUE;
+            }
+          }
+
+          if ($isgweb_ssl) {
+            if ($_SERVER['HTTPS'] !== 'on') {
+              header('Location: https://' . $_SERVER['HTTP_HOST'] . '/' . $node->path);
+              exit();
+            }
+          }
+        }
+
+      }
+
+      break;
+  }
+}
+
+
+/**
+ * Implements hook_user().
+ */
+function imis_isgweb_user($type, &$edit, &$account, $category = NULL) {
+  switch ($type) {
+    case 'login' :
+
+      break;
+    case 'logout' :
+
+      // Destroy session in ISGweb and Drupal
+      $token  = _imis_isgweb_session_read('ISGWEB_TOKEN');
+      $isgweb = _imis_isgweb_instance();
+      $data  = $isgweb->DeleteUserSession($token);
+
+      sess_destroy_uid($account->uid);
+
+      break;
+  }
+}
+
+
+/**
+ * Implements hook_cron().
+ */
+function imis_isgweb_cron() {
+  $output = _imis_isgweb_sync_all( date('Y-m-d') );
+}
+
+
+
+
+// Forms + handlers
+
+/**
+ * Form constructor for the Settings form.
+ */
+function imis_isgweb_form_settings() {
+  $config = _imis_isgweb_variable_get(NULL);
+
+  $form = array(
+      '#prefix'  => '<div class="imis-isgweb-admin">',
+      '#suffix'  => '</div>',
+      '#submit'  => array('imis_isgweb_form_settings_submit'),
+  );
+
+  $form['imis_isgweb_allow_login_failover'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Allow failover to Drupal user authentication if ISGweb authentication fails?'),
+      '#description' => 'Note that uid:1 will be authenticated against Drupal regardless.',
+      '#default_value' => _imis_isgweb_variable_get('imis_isgweb_allow_login_failover'),
+  );
+
+  $form['imis_isgweb_use_iframes'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Use ISGweb iframes for user registration, password requests, and logged-in profile views and edits?'),
+      '#description' => 'By enabling this, the core Drupal user screens will be replaced with ISGweb iframes.',
+      '#default_value' => _imis_isgweb_variable_get('imis_isgweb_use_iframes'),
+  );
+
+  $form['imis_isgweb_ui_root'] = array(
+      '#type' => 'textfield',
+      '#title' => t('ISGweb URL'),
+      '#description' => 'Set the URL for your ISGweb front-end interface (e.g. "' . $config['imis_isgweb_ui_root'] . '").',
+      '#required' => TRUE,
+      '#size' => 40,
+      '#default_value' => _imis_isgweb_variable_get('imis_isgweb_ui_root'),
+  );
+
+  $form['imis_isgweb_wsdl_root'] = array(
+      '#type' => 'textfield',
+      '#title' => t('ISGweb WSDL URL'),
+      '#description' => 'Set the URL for your ISGweb services root (e.g. "' . $config['imis_isgweb_wsdl_root'] . '"). Do not include the "ServiceName.asmx?wsdl" endpoint; the module itself accounts for these paths.',
+      '#required' => TRUE,
+      '#size' => 40,
+      '#default_value' => _imis_isgweb_variable_get('imis_isgweb_wsdl_root'),
+  );
+
+  $form['imis_isgweb_wsdl_key_Authentication'] = array(
+      '#type' => 'textfield',
+      '#title' => t('ISGweb WSDL Key - Authentication'),
+      '#description' => 'Set the "securityPassword" key for your ISGweb services Authentication instance (e.g. ' . $config['imis_isgweb_wsdl_key_Authentication'] . ').',
+      '#required' => TRUE,
+      '#size' => 40,
+      '#default_value' => _imis_isgweb_variable_get('imis_isgweb_wsdl_key_Authentication'),
+  );
+
+  $form['imis_isgweb_wsdl_key_DataAccess'] = array(
+      '#type' => 'textfield',
+      '#title' => t('ISGweb WSDL Key - DataAccess'),
+      '#description' => 'Set the "securityPassword" key for your ISGweb services DataAccess instance (e.g. ' . $config['imis_isgweb_wsdl_key_DataAccess'] . ').',
+      '#required' => TRUE,
+      '#size' => 40,
+      '#default_value' => _imis_isgweb_variable_get('imis_isgweb_wsdl_key_DataAccess'),
+  );
+
+  $form['imis_isgweb_ssl_domain'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Force SSL on this domain?'),
+      '#description' => 'If you want to force Drupal to use HTTPS pages when any HTTPS ISGweb iframe src URLs are found in the node body, enter your Drual site\'s domain here (e.g. "' . $config['imis_isgweb_ssl_domain'] . '").',
+      '#required' => FALSE,
+      '#size' => 40,
+      '#default_value' => (_imis_isgweb_variable_get('imis_isgweb_ssl_domain') !== 'www.yourdomain.org' ? _imis_isgweb_variable_get('imis_isgweb_ssl_domain') : ''),
+  );
+
+  $form['imis_isgweb_title_profile'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Member profile title'),
+      '#description' => 'Set the page title for all user pages (e.g. "' . $config['imis_isgweb_title_profile'] . '").',
+      '#required' => FALSE,
+      '#size' => 40,
+      '#default_value' => _imis_isgweb_variable_get('imis_isgweb_title_profile'),
+  );
+
+  $form['submit'] = array(
+      '#type' => 'submit',
+      '#value' => t('Save configuration'),
+  );
+
+  return $form;
+}
+
+
+/**
+ * Form submission handler for imis_isgweb_form_settings().
+ */
+function imis_isgweb_form_settings_submit($form, &$form_state) {
+  variable_set('imis_isgweb_allow_login_failover', (!empty($form_state['values']['imis_isgweb_allow_login_failover']) ? 1 : 0));
+  variable_set('imis_isgweb_use_iframes', (!empty($form_state['values']['imis_isgweb_use_iframes']) ? 1 : 0));
+  variable_set('imis_isgweb_ui_root',            $form_state['values']['imis_isgweb_ui_root']);
+  variable_set('imis_isgweb_wsdl_root',          $form_state['values']['imis_isgweb_wsdl_root']);
+  variable_set('imis_isgweb_wsdl_key_Authentication',    $form_state['values']['imis_isgweb_wsdl_key_Authentication']);
+  variable_set('imis_isgweb_wsdl_key_DataAccess',      $form_state['values']['imis_isgweb_wsdl_key_DataAccess']);
+  variable_set('imis_isgweb_ssl_domain',          $form_state['values']['imis_isgweb_ssl_domain']);
+  variable_set('imis_isgweb_title_profile',        $form_state['values']['imis_isgweb_title_profile']);
+
+  // Flush all caches to force our hooks to be run again (particularly hook_menu_alter)
+  drupal_flush_all_caches();
+
+  drupal_set_message('Settings saved');
+}
+
+
+
+
+/**
+ * Form constructor for the Sync form.
+ */
+function imis_isgweb_form_sync() {
+  $percent = variable_get('imis_isgweb_sync_completion', 0);
+  if ($percent == 100) {
+    variable_set('imis_isgweb_sync_completion', 0);
+  }
+  else {
+    // Sync already running!!!
+  }
+
+  $form = array(
+      '#prefix'  => '<div class="imis-isgweb-admin"><p>Use this form to manually sync all records from ISGweb to Drupal. The sync process can potentially take a while to run, so please run during off-peak times.</p><p>Note that this same routine is also hooked to the Drupal cron implementation to account for records changed in iMIS since yesterday.</p>',
+      '#suffix'  => '</div>',
+  );
+
+  $form['target'] = array(
+      '#type'    => 'markup',
+      '#prefix'  => '<div id="imis-isgweb-sync" class="clear-block">',
+      '#value'  => ' ',
+      '#suffix'  => '</div>',
+  );
+
+  $form['submit'] = array(
+      '#type'    => 'submit',
+      '#value'  => t('Start sync'),
+      '#ahah'    => array(
+        'event'    => 'click',
+        'path'    => 'admin/user/imis_isgweb/sync_js_message',
+        'wrapper'  => 'imis-isgweb-sync',
+        'effect'  => 'fade',
+        'progress'  => array(
+          'message'  => t('Running sync...'),
+          'type'    => 'bar',
+          'url'    => '/admin/user/imis_isgweb/sync_js_interval',
+          'interval'  => 30,
+  )
+  ),
+  );
+
+  return $form;
+}
+
+
+/**
+ * Form AHAH message for the imis_isgweb_form_sync()
+ */
+function imis_isgweb_form_sync_js_message() {
+  $output = _imis_isgweb_sync_all();
+
+  drupal_json(array(
+      'status'  => TRUE,
+      'data'    => $output
+  ));
+}
+
+
+/**
+ * Form AHAH progress callback for the imis_isgweb_form_sync()
+ */
+function imis_isgweb_form_sync_js_interval() {
+  $output = variable_get('imis_isgweb_sync_completion', 0);
+
+  drupal_json(array(
+      'percentage' => $output
+  ));
+}
+
+
+
+
+/**
+ * Form submission handler for user_login_form().
+ */
+function imis_isgweb_form_login_submit($form, &$form_state) {
+  global $user;
+
+  $isgweb = _imis_isgweb_instance();
+  $data  = $isgweb->AuthenticateUser($form_state['values']['name'], $form_state['values']['pass']);
+  $path = (!empty($_REQUEST['destination']) ? $_REQUEST['destination'] : '/');
+
+  if (!$data) {
+
+    $admin_test = user_load( array('name' => $form_state['values']['name']) );
+    if ($admin_test) {
+      if ($admin_test->uid == 1) {
+        $user = user_authenticate($form_state['values']);
+      }
+    }
+
+    $allow_failover = _imis_isgweb_variable_get('imis_isgweb_allow_login_failover');
+    if (!empty($allow_failover)) {
+      $user = user_authenticate($form_state['values']);
+    }
+
+    if ($user && !empty($user->uid)) {
+      user_external_login_register($form_state['values']['name'], 'imis_isgweb');
+      drupal_goto($path);
+    }
+
+    for ($i=0; $i < count($isgweb->errors); $i++) {
+      drupal_set_message( filter_xss($isgweb->errors[$i], array('a', 'em', 'strong', 'cite', 'code', 'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'pre')) );
+    }
+
+    return;
+  }
+
+  // Add and/or authenticate user in Drupal
+  user_external_login_register($form_state['values']['name'], 'imis_isgweb');
+
+  if ( _imis_isgweb_session_write('ISGWEB_TOKEN', $data['TOKEN']) ) {
+    _imis_isgweb_sync($user, $data);
+    user_external_login($user, $data);
+
+    drupal_goto($path);
+  }
+}
+
+
+

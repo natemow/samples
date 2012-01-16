@@ -1,0 +1,5 @@
+name            = "iMIS ISGweb"
+description     = "SSO and Data Sync module"
+package         = "iMIS Integration"
+core            = "6.x"
+dependencies[]  = user

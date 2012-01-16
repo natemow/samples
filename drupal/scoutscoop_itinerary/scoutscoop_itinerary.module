@@ -1,0 +1,858 @@
+<?php
+	
+	function scoutscoop_itinerary_menu()
+	{
+		$items['scoutscoop_itinerary/remove/%'] = array(
+			'page callback'		=> 'scoutscoop_itinerary_update',
+			'page arguments'	=> array('remove', 2, null, null),
+			'type'				=> MENU_CALLBACK,
+			'access arguments'	=> array('delete own itin content'),
+		);
+		
+		$items['scoutscoop_itinerary/remove_destination/%/%/%'] = array(
+			'page callback'		=> 'scoutscoop_itinerary_update',
+			'page arguments'	=> array('remove_destination', 2, 3, 4), // parent itin nid + child destination nid (or itin Location lid!!)
+			'type'				=> MENU_CALLBACK,
+			'access arguments'	=> array('edit own itin content'),
+		);
+		
+		return $items;
+	}
+	
+	
+	function scoutscoop_itinerary_theme(&$existing, $type, $theme, $path)
+	{
+		$hooks['scoutscoop_itinerary_block_addto'] = array(
+			'arguments' => array('title' => null, 'form' => null),
+			'template' => 'scoutscoop_itinerary_block_addto',
+		);
+		
+		$hooks['scoutscoop_itinerary_block_share'] = array(
+			'arguments' => array('title' => null, 'form' => null),
+			'template' => 'scoutscoop_itinerary_block_share',
+		);
+		
+		$hooks['scoutscoop_itinerary_block_start'] = array(
+			'arguments' => array('title' => null, 'form_1' => null, 'form_2' => null),
+			'template' => 'scoutscoop_itinerary_block_start',
+		);			
+		
+		$hooks['scoutscoop_itinerary_table'] = array(
+			'arguments' => array('title' => null, 'table' => null),
+			'template' => 'scoutscoop_itinerary_table',
+		);
+		
+		$hooks['scoutscoop_itinerary_title'] = array(
+			'arguments' => array('title' => null, 'form' => null),
+			'template' => 'scoutscoop_itinerary_title',
+		);
+		
+		$hooks['scoutscoop_itinerary_block_mode'] = array(
+			'arguments' => array('title' => null, 'form' => null),
+			'template' => 'scoutscoop_itinerary_block_mode',
+		);		
+		
+		return $hooks;
+	}
+	
+	
+	function scoutscoop_itinerary_block($op = 'list', $delta = NULL, $edit = NULL)
+	{
+		switch ($op)
+		{
+			case 'list' :
+			    
+				$blocks = array();
+				//$blocks[0]['info'] = t('ScoutScoop Itinerary - Add to Itinerary');
+				//$blocks[1]['info'] = t('ScoutScoop Itinerary - List');
+			    return $blocks;
+			    
+				break;
+			case 'view' :
+				
+				$block = null;
+				
+				switch ($delta)
+				{
+					case 0 :
+						$block['subject'] = t('Add to Itineraries');
+						$block['content'] = theme(
+												'scoutscoop_itinerary_block_addto', 
+												$block['subject'],
+												drupal_get_form('scoutscoop_itinerary_add_form')
+											);
+											
+						if (!user_access('create itin content')) {
+							$block = null;
+						}
+						
+						break;
+					case 1 :
+						$block['subject'] = t('Itinerary');
+						$block['content'] = theme(
+												'scoutscoop_itinerary_table', 
+												$block['subject'], 
+												scoutscoop_itinerary_table()
+											);
+						break;
+					case 2 :
+						$block['subject'] = t('Share Itinerary');
+						$block['content'] = theme(
+												'scoutscoop_itinerary_block_share', 
+												$block['subject'],
+												drupal_get_form('scoutscoop_itinerary_share_form')
+											);
+						break;
+					case 3 :
+						$block['subject'] = t('Optimize Your Route');
+						$block['content'] = theme(
+												'scoutscoop_itinerary_block_start', 
+												$block['subject'],
+												drupal_get_form('scoutscoop_itinerary_start_select_form'),
+												drupal_get_form('scoutscoop_itinerary_start_add_form')
+											);
+						break;
+					case 4 :
+						$args = func_get_args();
+						$node = $args[2];
+						
+						$block['subject'] = t($node->title);
+						$block['content'] = theme(
+												'scoutscoop_itinerary_title',
+												$block['subject'],
+												drupal_get_form('scoutscoop_itinerary_title_form', $node)
+											);
+						break;
+					case 5 :
+						$block['subject'] = t('Travel Mode');
+						$block['content'] = theme(
+												'scoutscoop_itinerary_block_mode', 
+												$block['subject'],
+												drupal_get_form('scoutscoop_itinerary_mode_form')
+											);
+						break;						
+				}
+				
+				return $block;
+				
+				break;
+		}
+	}
+	
+	
+	function scoutscoop_itinerary_mail($key, &$message, $params)
+	{
+		$message['headers']['Content-Type']	= 'text/html; charset=UTF-8; format=flowed; delsp=yes';
+		$message['subject']					= str_replace(array("\r", "\n"), '', $params['context']['subject']);
+		$message['body']					= '<div style="background:#1E1E1E; width:100%; overflow:hidden; border-bottom:solid 1px #666; margin:0 0 20px 0;"><a href="http://'.$_SERVER['HTTP_HOST'].'"><img src="http://'.$_SERVER['HTTP_HOST'].'/sites/all/themes/scoutscoop/assets/css/img/logo.png" width="200" height="40" style="margin:15px 20px; border:0;" alt="'.variable_get('site_name', 'Drupal').'" /></a></div>';
+		$message['body']				   .= $params['context']['message'];
+	}	
+	
+	
+	
+	function scoutscoop_itinerary_title_form(&$form_state, $node)
+	{
+		$form['title'] = array(
+			'#type'		=> 'textfield',
+			'#maxlength'=> 60,
+		);
+		
+		if (empty($form_state['submitted'])) {
+			$form['title']['#value'] = $node->title;
+		}
+		
+		$form['nid'] = array(
+			'#type'		=> 'hidden',
+			'#value'	=> $node->nid,
+		);
+				
+		$form['submit'] = array(
+			'#type'		=> 'submit',
+			'#value'	=> 'Save',
+		);
+		
+		return $form;
+	}
+	
+	
+	function scoutscoop_itinerary_title_form_submit($form, &$form_state)
+	{
+		$node			= node_load($form_state['values']['nid']);
+		$node->title	= t($form_state['clicked_button']['#post']['title']);
+		
+		node_save($node);
+	}
+	
+	
+	function scoutscoop_itinerary_add_form()
+	{
+		global $user;
+		
+		$nid_current = arg(1);
+		$destination = node_load($nid_current);
+		
+		
+		$result	= db_query("
+			SELECT		n.nid, d.field_destinations_nid
+			FROM		{node} n 
+			LEFT JOIN	{content_field_destinations} d ON d.vid = n.vid 
+			WHERE		n.type = 'itin' 
+			AND			n.uid = %s 
+			ORDER BY	d.field_destinations_nid DESC
+			",
+			array($user->uid)
+		);
+		
+		$nodes	= array();
+		while ($row = db_fetch_object($result)) {
+			if (!array_key_exists($row->nid, $nodes)) {
+			    $node = @node_load($row->nid);
+			    if (!empty($node)) {
+			    	$node->has_current_nid = false;
+			    	for ($delta = 0; $delta < count($node->field_destinations); $delta++) {
+			    		if (!$node->has_current_nid) {
+							$node->has_current_nid = (in_array($node->field_destinations[$delta]['nid'], array($nid_current)));
+							$delta_current_nid = $delta;
+			    		}
+					}
+			    	
+			    	$nodes[$node->nid] = $node;
+			    }
+			}
+		}
+		
+		
+		// Get Destination's city tag for comparison
+		$city_destination = array_keys(taxonomy_node_get_terms_by_vocabulary($destination, 7));
+		 
+		$options = $checked = array();
+		foreach ($nodes as $nid => $node) {
+			
+			// Get each Itinerary's city tag; if found, allow as an add option
+	    	$allow_addto	= false;
+			$city_itin 		= array_keys(taxonomy_node_get_terms_by_vocabulary($node, 7));
+			
+	    	for ($i=0; $i < count($city_itin); $i++) {
+	    		if (in_array($city_itin[$i], $city_destination)) {
+	    			$allow_addto = true;
+	    		}
+	    	}
+			
+			if ($allow_addto) {
+				$options[$node->nid] = l($node->title, 'node/'.$node->nid);
+				if ($node->has_current_nid) {
+					$checked[] = $node->nid;
+				}
+			}
+		}
+		
+		$form['itineraries'] = array(
+			'#type'		=> 'checkboxes',
+			'#options'	=> $options,
+			'#default_value' => $checked,
+		);
+		
+		$form['title'] = array(
+			'#type'		=> 'textfield',
+			'#maxlength'=> 60,
+		);
+		
+		$form['field_destinations'] = array(
+			'#type'		=> 'hidden',
+			'#value'	=> $nid_current,
+		);
+		
+		$form['submit'] = array(
+			'#type'		=> 'submit',
+			'#value'	=> 'Save',
+		);
+		
+		return $form;
+	}
+	
+	
+	function scoutscoop_itinerary_add_form_submit($form, &$form_state)
+	{
+		global $user;
+		
+		$destinations = explode(',', $form_state['values']['field_destinations']);
+		
+		// Add Destination to new Itinerary
+		if (!empty($form_state['values']['title']))
+		{
+			// Create a new itin node
+			$node						= new stdClass();
+			$node->uid					= $user->uid;
+			$node->type					= 'itin';
+			$node->status				= 1;
+			$node->title				= t($form_state['values']['title']);
+			$node->taxonomy				= null;
+			$node->field_destinations	= array();
+			
+			for ($i=0; $i < count($destinations); $i++) {
+				
+				// Copy destination's City tag to new Itinerary node
+				$dest = node_load($destinations[$i]);
+				foreach ($dest->taxonomy as $tid => $meta) {
+					if ($meta->vid == 7) { // City vocab
+						$node->taxonomy[$tid] = $meta;
+					}
+				}
+				
+				$node->field_destinations[$i] = array('nid'=>$dest->nid);
+			}
+			
+			node_save($node);
+			
+			drupal_set_message(t('"@node" itinerary has been created', array('@node' => $node->title)));
+		}
+		
+		// Loop existing itin nodes, save destination values
+		
+		$values_add = $values_rem = array();
+		
+		foreach ($form_state['values']['itineraries'] as $key => $value) {
+			$title						= strip_tags($form['itineraries']['#options'][$key]);
+			$node						= node_load($key);
+			$node->has_current_nid		= false;
+			
+			$delta = $delta_current_nid = 0;
+			for ($delta = 0; $delta < count($node->field_destinations); $delta++) {
+				if (!$node->has_current_nid) {
+					$node->has_current_nid = (in_array($node->field_destinations[$delta]['nid'], $destinations));
+					$delta_current_nid = $delta;
+				}
+			}
+			
+			if (!empty($value)) {
+				// Checked
+				if (!$node->has_current_nid) {
+					$values_add[] = $title;
+					
+					for ($i=$delta; $i < (count($destinations)+$delta); $i++) {
+						$node->field_destinations[$i] = array('nid'=>$destinations[$i-$delta]);
+					}
+				}
+			}
+			else {
+				// Unchecked
+				if ($node->has_current_nid) {
+					$values_rem[] = $title;
+					
+					unset($node->field_destinations[$delta_current_nid]);
+				}
+			}
+			
+			node_save($node);
+		}
+		
+		
+		if (!empty($values_add)) {
+			$values_add = '"'.implode('", "', $values_add).'"';
+			drupal_set_message(t('Destination was added to the following itineraries: @add', array('@add' => $values_add)) );
+		}
+		if (!empty($values_rem)) {
+			$values_rem = '"'.implode('", "', $values_rem).'"';
+			drupal_set_message(t('Destination was removed from the following itineraries: @remove', array('@remove' => $values_rem)) );
+		}
+	}
+	
+	
+	function scoutscoop_itinerary_share_form()
+	{
+		$nid = arg(1);
+		
+		$form['users'] = array(
+			'#type'					=> 'textfield',
+			'#autocomplete_path'	=> 'user/autocomplete/multiple',
+			'#description'			=> t('Enter multiple names as comma separated values Like name1, name2, name3'),
+			'#required'				=> true,
+		);
+		
+		$form['nid'] = array(
+			'#type'		=> 'hidden',
+			'#value'	=> $nid,
+		);
+		
+		$form['submit'] = array(
+			'#type'		=> 'submit',
+			'#value'	=> 'Share',
+		);
+		
+		return $form;
+	}
+	
+	
+	function scoutscoop_itinerary_share_form_submit($form, &$form_state)
+	{
+		global $user;
+		profile_load_profile($user);
+		
+		$user_name		= $user->profile_fname.' '.$user->profile_lname;
+		$itin			= node_load($form_state['values']['nid']);
+		$names			= explode(',', $form_state['values']['users']);
+		
+		for ($i=0; $i < count($names); $i++)
+		{
+			$name		= trim($names[$i]);
+		//	$uid		= explode(':', trim(substr($name, stripos($name, '{')), '{}'));
+		//	$uid		= $uid[1];
+			$uid		= trim(substr($name, stripos($name, '{')), '{}');
+			$recipient	= user_load($uid);
+			
+			if (!empty($recipient))
+			{
+				profile_load_profile($recipient);
+				
+				// Create a new itin node for this $user
+				$node						= new stdClass();
+				$node->uid					= $recipient->uid;
+				$node->type					= 'itin';
+				$node->status				= 1;
+				$node->title				= t($itin->title). ' (shared by '.$user_name.')';
+				$node->field_destinations	= array();
+				
+				for ($j=0; $j < count($itin->field_destinations); $j++) {
+					$node->field_destinations[$j] = array('nid' => $itin->field_destinations[$j]['nid']);
+				}
+				
+				
+				$recipient_name	= $recipient->profile_fname.' '.$recipient->profile_lname;
+				$message_log	= t('"@node" itinerary has been shared with @user', array('@node' => $itin->title, '@user' => $recipient_name));
+				
+				node_save($node);
+				watchdog('action', $message_log, null, WATCHDOG_INFO);
+				
+				// Set mail params
+				$params['context']['node']		= $node;
+				$params['context']['subject']	= variable_get('site_name', 'Drupal').' - '.$node->title;
+				$params['context']['message']	= '<p>'.t('@user has shared the "@node" itinerary with you: @link', array('@user' => $user_name, '@node' => $itin->title, '@link' => 'http://'.$_SERVER['HTTP_HOST'].'/'.$node->path)).'</p>';
+				
+				// Queue notification email to recipient
+				$message = &drupal_mail(
+					'scoutscoop_itinerary',
+					'share',
+					$recipient->mail,
+					language_default(),
+					$params,
+					$user->mail,
+					true
+				);
+				
+				drupal_set_message($message_log);
+			}
+		}
+	}
+	
+	
+	function scoutscoop_itinerary_mode_form()
+	{
+		$form['mode'] = array(
+			'#type'		=> 'select',
+			'#options'	=> array('DRIVING' => 'Driving', 'WALKING' => 'Walking', 'BICYCLING' => 'Bicycling'),
+		);
+		
+		$form['submit'] = array(
+			'#type'		=> 'submit',
+			'#value'	=> 'Route',
+		);
+		
+		return $form;
+	}
+	
+	
+	function scoutscoop_itinerary_mode_form_submit($form, &$form_state)
+	{
+		// This form is handled via application.js
+	}
+	
+	
+	function scoutscoop_itinerary_start_select_form()
+	{
+		global $user;
+		
+		$nid		= arg(1);
+		$node		= node_load($nid);
+		$options	= array('' => 'select starting destination');
+		
+		for ($i=0; $i < count($node->field_destinations); $i++) {
+			$dest			= node_load($node->field_destinations[$i]['nid']);
+			$location		= $dest->locations[0];
+			$hasLocation	= ($location['latitude'] != 0 && $location['longitude'] != 0);
+			
+			if ($hasLocation) {
+				$options[$dest->nid] = $dest->title;
+			}
+		}
+		
+		$form['field_destinations'] = array(
+			'#type'		=> 'select',
+			'#options'	=> $options,
+			'#value'	=> 0,
+		);
+		
+		$form['submit'] = array(
+			'#type'		=> 'submit',
+			'#value'	=> 'Route',
+		);
+		
+		return $form;
+	}
+	
+	
+	function scoutscoop_itinerary_start_select_form_submit($form, &$form_state)
+	{
+		// This form is handled via application.js
+	}
+	
+	
+	function scoutscoop_itinerary_start_add_form()
+	{
+		$nid		= arg(1);
+		$node		= node_load($nid);
+		$location	= (count($node->locations) ? $node->locations[0] : null);
+		$locations	= array();
+		
+		// Add start Location to map data if available
+		if (!empty($location)) {
+			// Update title with location name
+			$title			= $node->title;
+			$node->title	= $location['name'];
+			
+			scoutscoop_itinerary_add_map_location($location, $node, $locations);
+			
+			$locations[count($locations)-1]['nid_child']	= $location['lid'];
+			$locations[count($locations)-1]['genid']		= 'itin-'.$node->nid.'-start';
+			
+			// Reset title
+			$node->title = $title;
+		}
+		
+		// Add Destination Locations to map data
+		for ($i=0; $i < count($node->field_destinations); $i++) {
+			$dest			= node_load($node->field_destinations[$i]['nid']);
+			$dest->taxonomy	= array_flip( array_keys($dest->taxonomy) );
+			
+			scoutscoop_itinerary_add_map_location($dest->locations[0], $dest, $locations);
+			
+			// Correct the map data ids
+			$locations[count($locations)-1]['nid']			= $node->nid;
+			$locations[count($locations)-1]['nid_child']	= $dest->nid;
+		}
+		
+		// Append JSON map data
+		$form['#suffix'] = '
+			<script type="text/javascript">
+			var locationData = '.json_encode($locations).';
+			</script>';
+		
+		
+		// Now actually do some form stuff...
+		
+		$form['street'] = array(
+            '#type'				=> 'textfield',
+            '#title'			=> t('street'),
+            '#maxlength'		=> 255,
+            '#required'			=> true,
+			'#default_value'	=> $location['street'],
+		);
+		
+		$form['city'] = array(
+            '#type'				=> 'textfield',
+            '#title'			=> t('city'),
+            '#maxlength'		=> 255,
+            '#required'			=> true,
+			'#default_value'	=> $location['city'],
+		);
+		
+		$form['province'] = array(
+            '#type'				=> 'textfield',
+            '#title'			=> t('state/province'),
+            '#maxlength'		=> 64,
+            '#required'			=> true,
+			'#default_value'	=> $location['province'],
+		);
+		
+		$options = array_merge(array('' => t('country *')), location_get_iso3166_list());
+		$form['country'] = array(
+			'#type'				=> 'select',
+			'#title'			=> t('country'),
+			'#options'			=> $options,
+			'#required'			=> true,
+			'#default_value'	=> $location['country'],	
+		);
+		
+		$form['nid'] = array(
+			'#type'		=> 'hidden',
+			'#value'	=> $node->nid,
+		);
+		
+		$form['vid'] = array(
+			'#type'		=> 'hidden',
+			'#value'	=> $node->vid,
+		);
+		
+		$form['submit'] = array(
+			'#type'		=> 'submit',
+			'#value'	=> 'Route',
+		);
+		
+		return $form;
+	}
+	
+	
+	function scoutscoop_itinerary_start_add_form_submit($form, &$form_state)
+	{
+		$node = node_load($form_state['values']['nid']);
+		
+		$criteria = array(
+			'nid'	=> $node->nid,
+			'vid'	=> $node->vid,
+		);
+		
+		// Remove all previous Location data per the $criteria
+		$locations = array();
+		location_save_locations($locations, $criteria);
+		
+		// Save the new Location per the $criteria
+		$locations = array(
+			array(
+				'name'			=> 'Custom starting address',
+				'street'		=> $form_state['values']['street'],
+				'city'			=> $form_state['values']['city'],
+				'province'		=> $form_state['values']['province'],
+				'country'		=> $form_state['values']['country'],
+			),
+		);
+		
+		$criteria['genid'] = 'itin-'.$node->nid.'-start';
+		location_save_locations($locations, $criteria);
+				
+		// Get the new Location per $vid
+		$locations		= location_load_locations($node->vid, 'vid');
+		$hasLocation	= ($locations[0]['latitude'] != 0 && $locations[0]['longitude'] != 0);
+		
+		if ($hasLocation) {
+			drupal_set_message(t('Custom starting address for "'.$node->title.'" added'));
+		}
+		else {
+			drupal_set_message(t('The custom starting address for "'.$node->title.'" is invalid'));
+		}
+		
+	}
+	
+	
+	
+	
+	function scoutscoop_itinerary_update($action, $nid, $nid_child, $genid)
+	{
+		switch ($action)
+		{
+			case 'remove' :
+				
+				// Delete the itin node
+				node_delete($nid);
+				
+				break;
+			case 'remove_destination' :
+				
+				if (!empty($genid))
+				{
+					// Remove location from itin node
+					
+					$itin = node_load($nid); // Get the itin node
+					
+					// Loop locations, check against supplied lid
+					for ($i=0 ; $i < count($itin->locations); $i++) {
+						$location = $itin->locations[$i];
+						if ($location['lid'] == $nid_child) {
+							// Remove previous Location data per the $criteria
+							$locations = array();
+							location_save_locations($locations, array(
+								'nid'	=> $itin->nid,
+								'vid'	=> $itin->vid,
+							//	'genid'	=> $genid
+							));
+							
+							drupal_set_message( t('"@dest" has been removed from "@itin"', array('@dest' => $location['name'], '@itin' => $itin->title)) );
+						}
+					}
+					
+				}
+				else
+				{
+					// Remove destination from itin node
+					
+					$itin = node_load($nid);		// Get the itin node
+					$dest = node_load($nid_child);	// Get the destination node to be removed
+					
+					// Loop itin destinations, create updated destinations array
+					$updated = array();
+					for ($j=0; $j < count($itin->field_destinations); $j++) {
+						if ($itin->field_destinations[$j]['nid'] !== $dest->nid) {
+							$updated[] = array('nid' => $itin->field_destinations[$j]['nid']);
+						}
+					}
+					
+					$itin->field_destinations = $updated;
+					
+					node_save($itin);
+					drupal_set_message( t('"@dest" has been removed from "@itin"', array('@dest' => $dest->title, '@itin' => $itin->title)) );
+					
+				}
+				
+				break;
+		}
+		
+		drupal_goto(url($_REQUEST['destination']));
+		return;
+	}
+	
+	
+	function scoutscoop_itinerary_add_map_location($location, &$node, &$collection, $show_when_no_latlng = false)
+	{
+		$hasLocation = ($location['latitude'] != 0 && $location['longitude'] != 0);
+		
+		if ($show_when_no_latlng == true) {
+			$hasLocation = true;
+		}
+		
+		if ($hasLocation)
+		{
+			$node->path = (substr($node->path, 0, 1)=='/' ? '' : '/').$node->path;
+			
+			$timestamp	= time();
+			$img_medium = null;
+			$img_small	= null;
+			if (!empty($node->field_images[0])) {
+				$img_medium	= '/'.str_ireplace(array(' '), '%20', $node->field_images[0]['filepath']);
+				$img_info	= pathinfo($img_medium);
+				$count		= 1;
+				$img_medium	= str_ireplace($img_info['filename'], $img_info['filename'].'_230x173', $img_medium, $count);
+				$img_small	= str_ireplace($img_info['filename'].'_230x173', $img_info['filename'].'_113x85', $img_medium, $count);
+				
+				if ($img_info['filename'] == '_default') {
+					$img_medium = $img_small = null;
+				}
+			}
+			
+			/*
+			 * Use "adr" microformat for address
+			 * 
+			 * */
+			$address = vsprintf('
+				<div class="adr%s%s">
+					<div class="col-1">
+						<a href="%s"><img src="%s" width="113" height="85" alt="%s" /></a>
+					</div>
+					<div class="col-2">
+						<a href="%s" class="title">%s</a>
+						<div class="street-address">%s</div>
+						<div class="extended-address">%s</div>
+						<span class="locality">%s</span>
+						<span class="region">%s</span>
+						<span class="postal-code">%s</span>
+						<div class="country-name">%s</div>
+						<div class="tel">%s</div>
+						<div class="fax">%s</div>
+						<div class="website">%s</div>											
+					</div>
+					<div class="clear"></div>
+				</div>
+				',
+				array(
+					(empty($img_small) ? ' hide-img' : ''),
+					($hasLocation ? ' marker-'.$node->nid : ''),					
+					$node->path,
+					$img_small.'?'.$timestamp,
+					$node->title,
+					$node->path,
+					$node->title,
+					$location['street'],
+					'',
+					($location['city'] ? $location['city'].', ' : ''),
+					$location['province'],
+					$location['postal_code'],
+					$location['country_name'],
+					($location['phone'] ? 'Tel: <a href="tel:+'.str_ireplace('+', '', $location['phone']).'">+'.str_ireplace('+', '', $location['phone']).'</a>' : ''),
+					($location['fax'] ? 'Fax: '.$location['fax'] : ''),
+					//$node->field_hours_value,
+					$node->field_website_value
+					//($node->field_featured1_value ? '<div class="featured">Editor\'s Pick</div>' : ''),
+				)
+			);
+			
+			$type		= $node->type;
+			$desttype	= scoutscoop_ui_get_destination_type($node);
+			if (!empty($desttype)) { $type = $desttype; }
+			
+			$address_machine = preg_replace("/[^a-zA-Z0-9\s]/", "", array($location['street'], $location['city'], $location['province'], $location['postal_code'], $location['country_name']));
+			for ($i=0; $i < count($address_machine); $i++) {
+				$address_machine[$i] = strtoupper($address_machine[$i]);
+			}
+			$address_machine = implode(' ', $address_machine);
+			
+			
+			// Add location to JSON data collection
+			$collection[] = array(
+				'markerId'			=> 'marker-'.$node->nid,
+				'title'				=> $node->title,
+				'type'				=> $type,
+				'latitude'			=> $location['latitude'],
+				'longitude'			=> $location['longitude'],
+				'tooltipContent'	=> $address,
+				// This data is only used on the Itineraries detail screen
+				// image and phone are populated from the full node; the $address values above are populated by Views
+				'nid'				=> $node->nid,
+				'nid_child'			=> null,
+				'genid'				=> null, // Custom genid for location_instance (e.g. custom starting address)
+				'address_machine'	=> $address_machine,
+				'address_human'		=> $location['street'].'<br />'.$location['city'].' '.$location['province'].' '.(!empty($location['postal_code']) ? $location['postal_code'].', ' : '').$location['country_name'],
+				'path'				=> $node->path,
+				'image'				=> (!empty($img_medium) ? $img_medium.'?'.$timestamp : '/sites/default/files/imagefield_default_images/_default.png'),
+				'phone'				=> (!empty($location['phone']) ? '<a href="tel:+'.str_ireplace('+', '', $location['phone']).'">+'.str_ireplace('+', '', $location['phone']).'</a>' : ''),
+				'hours'				=> '', //(!empty($node->field_hours[0]['value']) ? $node->field_hours[0]['value'] : ''),
+			);
+			
+			return $address;
+		}
+		
+		return null;
+	}
+	
+	
+	function scoutscoop_itinerary_table()
+	{
+		global $user;
+		
+		$result	= db_query("SELECT n.nid FROM {node} n WHERE n.type = 'itin' AND n.uid = %s ORDER BY n.changed DESC", array($user->uid));
+		$nodes	= array();
+		while ($row = db_fetch_object($result)) {
+		    $node = @node_load($row->nid);
+		    if (!empty($node)) $nodes[$node->nid] = $node;
+		}
+		
+		if (empty($nodes)) { return ''; }
+		
+		$destination = drupal_get_destination();
+		
+		$header = array(
+			array('data' => 'Itinerary', 'class' => 'first'),
+			array('data' => 'Date Added'),
+		);
+		
+		$rows = array();
+		foreach ($nodes as $nid => $node) {
+			$rows[] = array('data' => array(
+								array('data' => l($node->title, 'node/'.$node->nid), 'class' => 'first'),
+								array('data' => l($node->title, 'scoutscoop_itinerary/remove/'.$node->nid, array('query'=>$destination, 'attributes' => array('class' => 'hide-txt icon remove'))) .' '. date('M j Y', $node->created)),
+							)
+						);
+		}
+		
+		return theme('table', $header, $rows, array('class' => 'data itins'), null);		
+	}
+	
+	
+	
+	

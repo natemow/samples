@@ -1,0 +1,98 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for the imis_isgweb module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function imis_isgweb_schema() {
+  $schema['imis_isgweb'] = array(
+      'description'  => 'The base table for imis_isgweb.',
+      'primary key'  => array('sid'),
+      'fields'    => array(
+          'sid'  => array(
+              'type'        => 'serial',
+              'unsigned'    => TRUE,
+              'not null'    => TRUE
+            ),
+          'uid' => array(
+            'type'        => 'int',
+            'length'      => 10,
+            'not null'    => TRUE,
+            'default'     => 0
+            ),
+          'imis_id' => array(
+            'type'        => 'varchar',
+            'length'      => 20,
+            'not null'    => TRUE,
+            'default'     => ''
+            ),
+          'imis_updated' => array(
+            'type'        => 'int',
+            'length'      => 11,
+            'not null'    => TRUE,
+            'default'     => 0
+            ),
+          'imis_logindisabled' => array(
+            'type'        => 'int',
+            'length'      => 1,
+            'not null'    => TRUE,
+            'default'     => 0
+            ),
+          'imis_weblogin' => array(
+            'type'        => 'varchar',
+            'length'      => 60,
+            'not null'    => TRUE,
+            'default'     => ''
+            ),
+          'imis_email' => array(
+            'type'        => 'varchar',
+            'length'      => 60,
+            'not null'    => TRUE,
+            'default'     => ''
+            ),
+          'imis_fname' => array(
+            'type'        => 'varchar',
+            'length'      => 60,
+            'not null'    => TRUE,
+            'default'     => ''
+            ),
+          'imis_lname' => array(
+            'type'        => 'varchar',
+            'length'      => 60,
+            'not null'    => TRUE,
+            'default'     => ''
+            )
+          )
+        );
+
+  return $schema;
+}
+
+
+/**
+ * Implements hook_install().
+ */
+function imis_isgweb_install() {
+  drupal_install_schema('imis_isgweb');
+}
+
+
+/**
+ * Implements hook_uninstall().
+ */
+function imis_isgweb_uninstall() {
+  drupal_uninstall_schema('imis_isgweb');
+
+  // Remove persistent variables from db
+  variable_del('imis_isgweb_allow_login_failover');
+  variable_del('imis_isgweb_use_iframes');
+  variable_del('imis_isgweb_ui_root');
+  variable_del('imis_isgweb_wsdl_root');
+  variable_del('imis_isgweb_wsdl_key_Authentication');
+  variable_del('imis_isgweb_wsdl_key_DataAccess');
+  variable_del('imis_isgweb_ssl_domain');
+  variable_del('imis_isgweb_title_profile');
+}

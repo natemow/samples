@@ -1,0 +1,18 @@
+<script type="text/javascript">
+var pair = window.location.search.substring(1);
+var parts = pair.split( '&' );
+var partsHeight = parts[0].split('=');
+var partsWidth = parts[1].split('=');
+var height = parseInt( partsHeight[1] );
+var width = parseInt( partsWidth[1] );
+try {
+var iframe = window.top.document.getElementById("ISGwebContainer");
+if (iframe != null)
+{
+iframe.height = height;
+iframe.style.height = height + 'px';
+iframe.width = width;
+iframe.style.width = width + 'px';
+}
+}catch(err) { }
+</script>
