@@ -35,7 +35,7 @@ custom
 ================================
 css
 ================================
-This is the main stylesheet that I wrote for infinityqs.com.
+  This is the main stylesheet that I wrote for http://www.infinityqs.com.
 
 
 ================================
