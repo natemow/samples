@@ -1,0 +1,148 @@
+<?php
+/**
+ * @file
+ * Code for the News feature.
+ */
+
+include_once 'interactive_news.features.inc';
+include_once 'includes/interactive_news.block.inc';
+include_once 'includes/interactive_news.pages.inc';
+
+// Private helper functions.
+/**
+ * Standard article EFQ params; hate copying and pasting this stuff all over.
+ */
+function _interactive_news_query_params() {
+
+  return array(
+    'entity_type' => 'node',
+    'bundle' => 'article',
+    'property_conditions' => array(
+      array('column' => 'status', 'value' => 1),
+    ),
+    'field_conditions' => array(
+      array('field' => 'field_article_press_release', 'column' => 'value', 'value' => _interactive_news_query_is_press_room())
+    ),
+    'field_order_by' => array(
+      array('field' => 'field_article_date', 'column' => 'value', 'direction' => 'DESC'),
+    ),
+    'page_limit' => PAGE_SIZE_LISTS_PAGE,
+  );
+
+}
+/**
+ * Static check for filtering article nodes flagged as press releases.
+ */
+function _interactive_news_query_is_press_room() {
+
+  $is_press_room = &drupal_static(__FUNCTION__);
+  if ($is_press_room == NULL) {
+    $path = drupal_get_path_alias();
+    $is_press_room = (stripos($path, 'press-room') !== FALSE);
+  }
+
+  return $is_press_room;
+}
+
+// Hook implementations.
+/**
+ * Implements hook_menu().
+ */
+function interactive_news_menu() {
+
+  $items['news'] = array(
+    'title' => 'News',
+    'file' => 'includes/interactive_news.pages.inc',
+    'page callback' => 'interactive_news_page_list',
+    'page arguments' => array(1, 2, FALSE),
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['press-room'] = array(
+    'title' => 'Press Room',
+    'file' => 'includes/interactive_news.pages.inc',
+    'page callback' => 'interactive_news_page_list',
+    'page arguments' => array(1, 2, TRUE),
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_theme_registry_alter().
+ */
+function interactive_news_theme_registry_alter(&$theme_registry) {
+  _interactive_common_add_theme_template_by_module($theme_registry, 'interactive_news', 'node__article', array(
+    'base_hook' => 'node'
+  ));
+}
+
+// Features hook implementations.
+/**
+ * Implements hook_query_TAG_alter().
+ */
+function interactive_news_query_MERGE_ARTICLE_AND_EVENT_LIST_alter(QueryAlterableInterface $query) {
+
+  if (module_exists('interactive_event')) {
+
+    // This hook alters both the "Recent News" block
+    // and "News" page (default + archive variant) callback results.
+    $entity_date = "
+      CASE
+        WHEN node.type = 'article' THEN ad.field_article_date_value
+        WHEN node.type = 'event' THEN ed.field_event_date_value
+      END";
+
+    // Add derived field for ORDER BY expression.
+    $query->addExpression($entity_date, 'entity_date');
+
+    // Omit articles flagged as press releases (or NULL for event bundle).
+    $query->addJoin('LEFT', 'field_data_field_article_press_release', 'apr', '
+          node.nid = apr.entity_id
+      AND (apr.field_article_press_release_value = 0
+      OR apr.field_article_press_release_value IS NULL)
+    ');
+
+    // Join bundle-centric custom date fields.
+    $query->addJoin('LEFT', 'field_data_field_article_date', 'ad', 'node.nid = ad.entity_id');
+    $query->addJoin('LEFT', 'field_data_field_event_date', 'ed', 'node.nid = ed.entity_id');
+
+    // Order by date expression.
+    $query->orderBy('entity_date', 'DESC');
+
+    // Append additional date range clause.
+    $filter_archive_date_range = $query->getMetaData('filter_archive_date_range');
+    if (!empty($filter_archive_date_range)) {
+      $query->where("{$entity_date} BETWEEN :db_condition_placeholder_start AND :db_condition_placeholder_end", array(
+        ':db_condition_placeholder_start' => $filter_archive_date_range->start,
+        ':db_condition_placeholder_end' => $filter_archive_date_range->end,
+      ));
+    }
+
+    // Append additional term filter clause.
+    $filter_term = $query->getMetaData('filter_term');
+    if (!empty($filter_term)) {
+      $query->addJoin('INNER', 'taxonomy_index', 'ti', 'node.nid = ti.nid AND ti.tid = :tid', array(
+        ':tid' => $filter_term->tid,
+      ));
+    }
+
+  }
+
+}
+/**
+ * drupal_alter cb to switch date value for month/year and year Archives lists.
+ */
+function interactive_news__interactive_common_block_view_archives_type_alter(&$entity_meta, &$date) {
+
+  switch ($entity_meta->type->value()) {
+    case 'article':
+      $date = $entity_meta->field_article_date->value();
+      break;
+  }
+
+}

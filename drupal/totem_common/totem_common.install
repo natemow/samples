@@ -1,0 +1,515 @@
+<?php
+/**
+ * @file
+ * totem_common.install
+ */
+
+/**
+ * Implements hook_install().
+ */
+function totem_common_install() {
+
+  // Create a default role for site administrators, with all available
+  // permissions assigned.
+  $admin_role = new stdClass();
+  $admin_role->name = 'administrator';
+  $admin_role->weight = 2;
+  user_role_save($admin_role);
+
+  // Set this as the administrator role.
+  variable_set('user_admin_role', $admin_role->rid);
+
+  // Assign user 1 the "administrator" role.
+  db_insert('users_roles')
+    ->fields(array('uid' => 1, 'rid' => $admin_role->rid))
+    ->execute();
+
+  _totem_common_install_variables();
+  _totem_common_install_filter_formats();
+
+  // Grant new administrator role all permissions.
+  user_role_grant_permissions($admin_role->rid, array_keys(module_invoke_all('permission')));
+
+  drupal_flush_all_caches();
+
+  // Add default blocks, nodes.
+  _totem_common_install_blocks();
+  _totem_common_install_nodes();
+
+  // Give this module heaviest weight.
+  _totem_common_system_max_weight('totem_common');
+
+}
+
+// Installation tasks.
+/**
+ * TODO.
+ */
+function _totem_common_install_variables() {
+
+  // Default the initial site info settings.
+  variable_set('site_name', 'Totem');
+  variable_set('site_slogan', 'A Drupal distro for building communities');
+  variable_set('site_default_country', 'US');
+  variable_set('date_default_timezone', 'America/New_York');
+
+  // Temp var to store setup data.
+  variable_set('totem_install_temp_vars', array());
+
+  // Set variable to hold name of client-specific override module.
+  variable_set('totem_custom', '');
+
+  // Disable Bartik and enable custom front end theme.
+  $theme_default = 'totem_ui';
+
+  db_update('system')
+    ->fields(array('status' => 0))
+    ->condition('type', 'theme')
+    ->condition('name', variable_get('theme_default'))
+    ->execute();
+
+  db_update('system')
+    ->fields(array('status' => 1))
+    ->condition('type', 'theme')
+    ->condition('name', $theme_default)
+    ->execute();
+
+  db_update('block')
+    ->fields(array('theme' => $theme_default))
+    ->condition('theme', variable_get('theme_default'))
+    ->execute();
+
+  // Set admin theme.
+  variable_set('admin_theme', 'seven');
+  // TODO: Note the theme weirdness for admins on modal edit when this is set.
+  variable_set('node_admin_theme', 0);
+
+  // Settings for custom front end theme.
+  variable_set('theme_default', $theme_default);
+  variable_set('theme_settings', array(
+    'toggle_logo' => 1,
+    'toggle_name' => 1,
+    'toggle_slogan' => 1,
+    'toggle_node_user_picture' => 1,
+    'toggle_comment_user_picture' => 1,
+    'toggle_comment_user_verification' => 0,
+    'default_favicon' => 0,
+    'toggle_favicon' => 1,
+    'favicon_path' => drupal_get_path('theme', $theme_default) . '/favicon.ico',
+    'favicon_upload' => '',
+    'default_logo' => 0,
+    'logo_path' => drupal_get_path('theme', $theme_default) . '/logo.png',
+    'logo_upload' => '',
+    'toggle_main_menu' => 1,
+    'toggle_secondary_menu' => 0,
+  ));
+
+  variable_set('pathauto_node_pattern', 'node/[node:nid]');
+  variable_set('pathauto_node_page_pattern', '[node:title]');
+  variable_set('pathauto_node_community_pattern', 'community/[node:title]');
+
+  variable_set('subpathauto_depth', 4);
+  variable_set('subpathauto_ignore_admin', 1);
+
+  // Set Node type options.
+  // Used by hook_node_access to trigger CRUD access checks.
+  variable_set('node_permissions_page', 1);
+  variable_set('node_options_page', array('status'));
+  variable_set('node_submitted_page', FALSE);
+  variable_set('comment_page', COMMENT_NODE_HIDDEN);
+  variable_set('comment_subject_field_page', FALSE);
+  variable_set('comment_default_mode_page', COMMENT_MODE_FLAT);
+  variable_set('comment_default_per_page_page', '300');
+  variable_set('internal_nodes_action_page', '200');
+  variable_set('internal_nodes_nodes_page', 0);
+  variable_set('internal_nodes_url_page', '');
+
+  // Used by hook_node_access to trigger CRUD access checks.
+  variable_set('node_permissions_community', 1);
+  variable_set('node_options_community', array('status'));
+  variable_set('node_submitted_community', FALSE);
+  variable_set('comment_community', COMMENT_NODE_HIDDEN);
+  variable_set('comment_subject_field_community', FALSE);
+  variable_set('comment_default_mode_community', COMMENT_MODE_FLAT);
+  variable_set('comment_default_per_page_community', '300');
+  variable_set('internal_nodes_action_community', '200');
+  variable_set('internal_nodes_nodes_community', 0);
+  variable_set('internal_nodes_url_community', '');
+
+  // Prepare default image for community node type.
+  $comm_image_src_path = drupal_get_path('module', 'totem_common') . '/theme/img/default-community.png';
+  $comm_image_fid = _totem_common_put_default_image($comm_image_src_path, 'totem_common/default-community.png', TRUE);
+  if ($comm_image_fid !== FALSE) {
+    variable_set('totem_common_default_community_image_fid', $comm_image_fid);
+  }
+
+  // Clientside Validation.
+  // This section is triggering weird array validation errors in QA. Possibly
+  // due to a hit on the word "function" in the var names below?
+  // @see http://qa.drupal.org/pifr/test/416868
+  variable_set('clientside_validation_custom_error_function',	'');
+  variable_set('clientside_validation_error_placement_after_input',	'');
+  variable_set('clientside_validation_error_placement_after_label',	'');
+  variable_set('clientside_validation_error_placement_before_input', '');
+  variable_set('clientside_validation_error_placement_before_label', '');
+  variable_set('clientside_validation_error_placement_custom_function',	'');
+  variable_set('clientside_validation_error_placement_default', '1');
+  variable_set('clientside_validation_error_placement_jquery', '');
+  variable_set('clientside_validation_error_placement_top_of_form',	'');
+  variable_set('clientside_validation_filter_paths', '0');
+  variable_set('clientside_validation_include_hidden', '');
+  variable_set('clientside_validation_jquery_selector',	'');
+  variable_set('clientside_validation_path_list',	'');
+  variable_set('clientside_validation_prefix', '');
+  variable_set('clientside_validation_scrollto_errormessage',	1);
+  variable_set('clientside_validation_scroll_speed', '1000');
+  variable_set('clientside_validation_suffix', '');
+  variable_set('clientside_validation_use_minified', '1');
+  variable_set('clientside_validation_validate_onblur', '0');
+  variable_set('clientside_validation_validate_onkeyup', '0');
+  variable_set('clientside_validation_validate_onsubmit', '1');
+  variable_set('clientside_validation_validate_tabs', 1);
+
+  // Clientside Validation module does not block AJAX form submissions,
+  // so exclude our AJAX-ified login and register forms from it.
+  // @see http://drupal.org/node/1486480
+  variable_set('clientside_validation_validate_all', CLIENTSIDE_VALIDATION_VALIDATE_ALL_EXCEPT);
+  $form_ids_exclude = array('user_login', 'user_register_form');
+  variable_set('clientside_validation_validate_specific', implode("\n", $form_ids_exclude));
+
+  // ShareThis.
+  variable_set('sharethis_late_load', 1);
+  variable_set('sharethis_widget_option', 'st_multi');
+  variable_set('sharethis_button_option', 'stbc_large');
+  variable_set('sharethis_service_option', '"Facebook:facebook","Tweet:twitter","Google +:googleplus"');
+  variable_set('sharethis_node_option', 'topic,community,event,media,0');
+  variable_set('sharethis_teaser_option', 1);
+  variable_set('sharethis_location', 'block');
+  variable_set('sharethis_publisherID', 'dr-819c36e5-4d4d-d516-8686-22105c4df137');
+
+  variable_set('totem_common_no_results_text_default', '<p>No content available yet.</p>');
+
+}
+/**
+ * TODO.
+ */
+function _totem_common_install_filter_formats() {
+
+  // Add text formats.
+  $filtered_html_format = array(
+    'format' => 'filtered_html',
+    'name' => 'Filtered HTML',
+    'weight' => 0,
+    'filters' => array(
+      // URL filter.
+      'filter_url' => array(
+        'weight' => 0,
+        'status' => 1,
+      ),
+      // HTML filter.
+      'filter_html' => array(
+        'weight' => 1,
+        'status' => 1,
+        'settings' => array('allowed_html' => '<a> <em> <strong> <cite> <blockquote> <code> <ul> <ol> <li> <dl> <dt> <dd> <p>'),
+      ),
+      // Line break filter.
+      'filter_autop' => array(
+        'weight' => 2,
+        'status' => 1,
+      ),
+      // HTML corrector filter.
+      'filter_htmlcorrector' => array(
+        'weight' => 10,
+        'status' => 1,
+      ),
+    ),
+  );
+  $filtered_html_format = (object) $filtered_html_format;
+  filter_format_save($filtered_html_format);
+
+  $full_html_format = array(
+    'format' => 'full_html',
+    'name' => 'Full HTML',
+    'weight' => 1,
+    'filters' => array(
+      // URL filter.
+      'filter_url' => array(
+        'weight' => 0,
+        'status' => 1,
+      ),
+      // Line break filter.
+      'filter_autop' => array(
+        'weight' => 1,
+        'status' => 0,
+      ),
+      // HTML corrector filter.
+      'filter_htmlcorrector' => array(
+        'weight' => 10,
+        'status' => 1,
+      ),
+    ),
+  );
+  $full_html_format = (object) $full_html_format;
+  filter_format_save($full_html_format);
+
+  $formats = array(
+    $filtered_html_format->format => &$filtered_html_format,
+    $full_html_format->format => &$full_html_format,
+  );
+
+  // Set filter permissions.
+  user_role_grant_permissions(DRUPAL_ANONYMOUS_RID, array('access content', 'use text format filtered_html'));
+  user_role_grant_permissions(DRUPAL_AUTHENTICATED_RID, array('access content', 'use text format filtered_html'));
+
+}
+/**
+ * TODO.
+ */
+function _totem_common_install_blocks() {
+
+  // Update core blocks.
+  db_update('block')
+    ->fields(array('status' => 1, 'region' => 'header_second', 'weight' => 0))
+    ->condition('module', 'system', '=')
+    ->condition('delta', 'user-menu', '=')
+    ->execute();
+
+  db_update('block')
+    ->fields(array('status' => 1, 'region' => 'header_second', 'weight' => 1))
+    ->condition('module', 'search', '=')
+    ->condition('delta', 'form', '=')
+    ->execute();
+
+  db_update('block')
+    ->fields(array('status' => 1, 'region' => 'header_menu', 'weight' => 2))
+    ->condition('module', 'system', '=')
+    ->condition('delta', 'main-menu', '=')
+    ->execute();
+
+
+  // Add node type restrictions for Community Overview blocks.
+  $blocks_community = db_select('block', 'b')
+    ->fields('b', array('module', 'delta'))
+    ->condition('module', 'totem_common')
+    ->condition('delta', db_like('overview_') . '%', 'LIKE')
+    ->condition('pages', db_like('node/') . '%', 'LIKE')
+    ->execute();
+
+  while ($row = $blocks_community->fetchAssoc()) {
+    db_insert('block_node_type')
+      ->fields(array(
+        'type' => 'community',
+        'module' => $row['module'],
+        'delta' => $row['delta'],
+      ))
+      ->execute();
+  }
+
+
+  // Insert custom blocks.
+  $blocks = array(
+    array(
+      'module' => 'menu',
+      'delta' => 'menu-community-menu',
+      'theme' => variable_get('theme_default'),
+      'status' => 1,
+      'weight' => 3,
+      'region' => 'header_menu',
+      'title' => '',
+      'visibility' => BLOCK_VISIBILITY_NOTLISTED,
+      'pages' => '',
+      'cache' => DRUPAL_CACHE_GLOBAL,
+    ),
+    array(
+      'module' => 'menu',
+      'delta' => 'footer-menu',
+      'theme' => variable_get('theme_default'),
+      'status' => 1,
+      'weight' => 0,
+      'region' => 'footer_first',
+      'title' => '',
+      'visibility' => BLOCK_VISIBILITY_NOTLISTED,
+      'pages' => '',
+      'cache' => DRUPAL_CACHE_GLOBAL,
+    ),
+    array(
+      'module' => 'block',
+      'delta' => '1',
+      'theme' => variable_get('theme_default'),
+      'status' => 1,
+      'weight' => 0,
+      'region' => 'footer_second',
+      'title' => '',
+      'visibility' => BLOCK_VISIBILITY_NOTLISTED,
+      'pages' => '',
+      'cache' => DRUPAL_CACHE_GLOBAL,
+    ),
+  );
+
+  $query = db_insert('block')->fields(array('module', 'delta', 'theme', 'status', 'weight', 'region', 'title', 'visibility', 'pages', 'cache'));
+  foreach ($blocks as $block) {
+    $query->values($block);
+  }
+  $query->execute();
+
+  // Set custom content block content (see $insert arrays above for bid values).
+  $block_site_info = <<<EOD
+<p>@site_name is licensed under the <a href="/profiles/totem/LICENSE.txt">GNU GPL, v2</a>.</p>
+<p class="is-logo">Courtesy of <a href="http://www.interactivestrategies.com">Interactive Strategies</a></p>
+<p class="social">Tell all your friends how awesome @site_name is!</p>
+<p class="social clearfix">
+  <a class="facebook" target="_blank" href="https://www.facebook.com/sharer.php?s=100&p[title]=Totem+-+a+new+Drupal+distribution&p[image]=http://totem.interactiverequest.com/profiles/totem/themes/totem_ui/logo.png&p[url]=http://bit.ly/X9E8Bw&p[summary]=Check+out+the+new+Totem+Drupal+distribution+from+Interactive+Strategies!">Share it</a>
+  <a class="twitter" target="_blank" href="http://twitter.com/intent/tweet?url=http://bit.ly/X9E8Bw&text=Check+out+the+new+Totem+Drupal+distribution+@detailsmatter!&hashtags=TotemDrupal">Tweet it</a>
+</p>
+EOD;
+
+  db_insert('block_custom')
+    ->fields(array(
+      'bid' => 1,
+      'body' => st($block_site_info, array('@site_name' => variable_get('site_name'))),
+      'info' => st('Site info'),
+      'format' => 'full_html',
+    ))
+    ->execute();
+
+  // Add block_role records.
+  db_insert('block_role')->fields(array('module' => 'system', 'delta' => 'main-menu', 'rid' => 1))->execute();
+  db_insert('block_role')->fields(array('module' => 'menu', 'delta' => 'menu-community-menu', 'rid' => 2))->execute();
+
+  // Add block_class records.
+  db_insert('block_class')->fields(array('module' => 'system', 'delta' => 'user-menu', 'css_class' => 'utility'))->execute();
+  db_insert('block_class')->fields(array('module' => 'system', 'delta' => 'main-menu', 'css_class' => 'nav utility corners top'))->execute();
+  db_insert('block_class')->fields(array('module' => 'menu', 'delta' => 'menu-community-menu', 'css_class' => 'nav utility corners top'))->execute();
+  db_insert('block_class')->fields(array('module' => 'search', 'delta' => 'form', 'css_class' => 'corners'))->execute();
+
+  // Add block_class records for jscrollpane.
+  // @see totem_common_block_info()
+  foreach (array(2, 3, 4, 5) as $ix) {
+    $delta = 'embed_type_list_' . $ix;
+    db_insert('block_class')->fields(array('module' => 'totem_common', 'delta' => $delta, 'css_class' => 'custom-scroll'))->execute();
+  }
+  // Add block classes for jscrollpane.
+  // @see totem_common_block_info()
+  foreach (array(2, 3, 5) as $ix) {
+    $delta = 'embed_type_subscribed_' . $ix;
+    db_insert('block_class')->fields(array('module' => 'totem_common', 'delta' => $delta, 'css_class' => 'custom-scroll'))->execute();
+  }
+
+}
+/**
+ * TODO.
+ */
+function _totem_common_install_nodes() {
+
+  $body_home = <<<EOD
+<div class="grid-5 alpha">
+  <div class="features-totem">
+    <div class="logo">Totem</div>
+  </div>
+</div>
+<div class="grid-7 omega">
+  <div class="about-totem">
+    <h2 class="page-header">What is Totem?</h2>
+    <p>Totem is a packaged Drupal distribution designed for organizations that want to build communities of users who have very specific interests and who want to share topical discussions, media and events with their peers. A "community" might be defined as:</p>
+    <ul>
+    <li>A group of like-minded researchers who want to collaborate and share data, figures and lessons learned.</li>
+    <li>A member-based organization looking to create dedicated collaboration spaces for its working groups (such as local chapters or unions).</li>
+    <li>A group of folks brainstormed by your client, centered around [insert primary business objective here]; this client wants a branded, Facebook-like site to call their own. Millions will be made...they just need the right free distro to get them there. All you have to do is download and install...</li>
+    </ul>
+    <p>To learn more about Totem, please visit the <a href="http://drupal.org/project/totem">Drupal project page</a>...or take it for a test drive right now! We'd love to hear your feedback!</p>
+    <div class="actions">
+      <a href="/user/modal/register" class="btn btn-signup ctools-use-modal" rel="ctools-modal-target-user-modal-register"><span class="corners"></span>Register</a>
+      <a href="/user/modal/login" class="btn btn-signin ctools-use-modal" rel="ctools-modal-target-user-modal-login"><span class="corners"></span>Sign In</a>
+      <a href="http://drupal.org/project/totem#downloads" class="btn btn-download"><span class="corners"></span>Download</a>
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</div>
+<div class="clearfix"></div>
+EOD;
+
+  $body_home = st($body_home, array('@site_name' => variable_get('site_name')));
+
+  // Add Homepage node.
+  $node = new stdClass();
+  $node->type = 'page';
+  $node->uid = 1;
+  $node->language = LANGUAGE_NONE;
+  $node->title = st('Welcome to @site_name!', array('@site_name' => variable_get('site_name')));
+  $node->body[$node->language][0]['format'] = 'full_html';
+  $node->body[$node->language][0]['value'] = $body_home;
+  node_save($node);
+  $nid_home = $node->nid;
+
+  variable_set('site_frontpage', 'node/' . $nid_home);
+
+  // Add 403 and 404 nodes.
+  $node = new stdClass();
+  $node->type = 'page';
+  $node->uid = 1;
+  $node->language = LANGUAGE_NONE;
+  $node->title = '404';
+  $node->body[$node->language][0]['format'] = 'full_html';
+  $node->body[$node->language][0]['value'] = '<p>Sorry, we couldn\'t find that page.</p>';
+  node_save($node);
+  $nid_404 = $node->nid;
+
+  variable_set('site_404', 'node/' . $nid_404);
+
+  $node = new stdClass();
+  $node->type = 'page';
+  $node->uid = 1;
+  $node->language = LANGUAGE_NONE;
+  $node->title = '403';
+  $node->body[$node->language][0]['format'] = 'full_html';
+  $node->body[$node->language][0]['value'] = '<p>Sorry, access is denied.</p>' . $body_home;
+  node_save($node);
+  $nid_403 = $node->nid;
+
+  variable_set('site_403', 'node/' . $nid_403);
+
+  // Add About node.
+  $node = new stdClass();
+  $node->type = 'page';
+  $node->uid = 1;
+  $node->language = LANGUAGE_NONE;
+  $node->title = 'About';
+  $node->body[$node->language][0]['format'] = 'full_html';
+  $node->body[$node->language][0]['value'] = '<p>Add copy that describes the site here.</p>';
+  node_save($node);
+  $nid_about = $node->nid;
+
+  // Add Privacy Policy node.
+  $node = new stdClass();
+  $node->type = 'page';
+  $node->uid = 1;
+  $node->language = LANGUAGE_NONE;
+  $node->title = 'Privacy Policy';
+  $node->body[$node->language][0]['format'] = 'full_html';
+  $node->body[$node->language][0]['value'] = '<p>Add privacy policy here.</p>';
+  node_save($node);
+  $nid_privacy = $node->nid;
+
+  // Add Terms of Use node.
+  $node = new stdClass();
+  $node->type = 'page';
+  $node->uid = 1;
+  $node->language = LANGUAGE_NONE;
+  $node->title = 'Terms of Use';
+  $node->body[$node->language][0]['format'] = 'full_html';
+  $node->body[$node->language][0]['value'] = '<p>Add terms of use here.</p>';
+  node_save($node);
+  $nid_terms = $node->nid;
+
+  $profile_intall_vars = array(
+    'nid_home' => $nid_home,
+    'nid_404' => $nid_404,
+    'nid_403' => $nid_403,
+    'nid_about' => $nid_about,
+    'nid_privacy' => $nid_privacy,
+    'nid_terms' => $nid_terms,
+  );
+
+  variable_set('totem_install_temp_vars', $profile_intall_vars);
+
+}

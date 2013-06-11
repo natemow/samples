@@ -1,0 +1,21 @@
+<?php
+/**
+ * @file
+ * interactive_news.install
+ */
+
+/**
+ * Implements hook_install().
+ */
+function interactive_news_install() {
+
+  // Set variables.
+  variable_set('pathauto_node_article_pattern','news/[node:title]');
+  variable_set('node_options_article', array('status'));
+  variable_set('node_submitted_article', FALSE);
+  variable_set('comment_article', COMMENT_NODE_HIDDEN);
+  variable_set('comment_subject_field_article', FALSE);
+  variable_set('comment_default_mode_article', COMMENT_MODE_FLAT);
+  variable_set('comment_default_per_page_article', '300');
+
+}

@@ -1,0 +1,618 @@
+
+$images-path-global: "../../nprdd_ui/css/img";
+$images-path: "img" !default;
+
+$header-height: 100px !default;
+$header-background-color: $body-bg !default;
+
+$intro-image-height: 300px !default;
+$intro-background-color: $body-bg !default;
+
+$footer-height: 300px !default;
+$footer-background-color: $body-bg !default;
+$footer-font-color: $body-font-color !default;
+
+$main-menu-height: 40px !default;
+$main-menu-border-color: #fff !default;
+$main-menu-background: #666 !default;
+$main-menu-background-hover: #444 !default;
+$main-menu-arrow-color: #fff !default;
+$main-menu-arc-height: ($global-radius-outer * 2) !default;
+
+// Import Compass components.
+@import "compass/css3/border-radius";
+@import "compass/css3/images";
+@import "compass/css3/opacity";
+@import "compass/css3/box-shadow";
+@import "compass/css3/text-shadow";
+@import "compass/layout/sticky-footer";
+
+// Import Foundation components.
+@import "foundation/components/global"; // *always required
+@import "foundation/components/grid";
+@import "foundation/components/type";
+@import "buttons"; // *using local copy instead
+@import "foundation/components/forms"; // *requires components/buttons
+@import "foundation/components/custom-forms"; // *requires components/buttons, components/forms
+
+// Import NPRDD UI components.
+@import url(http://fonts.googleapis.com/css?family=#{$body-font-family-google}:#{$body-font-weight},#{$body-font-weight-bold});
+@import "normalize";
+@import "nprdd-ui-mixins";
+@import "nprdd-ui-forms";
+@import "nprdd-ui-soft-tabs";
+
+
+  article, .block {
+    ul, ol, dl {
+      margin-left: 1em; }
+  }
+
+  a {
+    span.arrow {
+      @include default-arrow(); }
+  }
+
+// Menu baseline styles.
+  ul.menu {
+    @include clearfix();
+    font-size: $base-font-size;
+    margin: 0;
+    padding: 0;
+    position: relative;
+
+    > li {
+      float: left;
+      list-style: none outside none;
+      margin: 0;
+      padding: 0;
+
+      > a {
+        color: $anchor-font-color;
+        display: block; }
+    }
+  }
+
+  .block.button-top-right {
+    position: relative;
+
+    .button {
+      margin: -.5em ($column-gutter / 2) 0 0;
+      position: absolute;
+      right: 0;
+      top: 0;
+    }
+  }
+
+  .block.clear-left {
+    clear: left; }
+  .block.clear-right {
+    clear: right; }
+
+
+// Header styles.
+  @mixin header(
+    $height: $header-height,
+    $background: $header-background-color
+  ) {
+    #header {
+      background: $background;
+
+      #site-logo {
+        float: left;
+        a {
+          display: block;
+          float: left;
+          img {
+            display: block;
+            float: left;
+            width: 100%; }
+        }
+      }
+      #site-slogan {
+        float: left;
+        line-height: 1.2; }
+
+      @content;
+    }
+
+    @media #{$small-to-medium} {
+      #header {
+        #site-logo {
+          margin: 1em 0;
+        }
+      }
+    }
+    @media #{$large} {
+      #header {
+        height: $height;
+        .columns {
+          height: $height; }
+        .block-search-form {
+          margin: 2.5em 0; }
+      }
+    }
+  }
+
+// Main menu styles.
+//   Note: only breakpoint large menu styles can be overridden via @content;
+//   use @mixin breakpoint-small() if mobile styling required.
+  @mixin main-menu() {
+
+    @media #{$small-to-medium} {
+      #mobile-menu-toggle {
+        position: absolute;
+        right: 0;
+        top: 0;
+        z-index: 1;
+
+        a.toggler {
+          background: url($images-path-global + '/sprite-global-png24.png') no-repeat 100% -100px;
+          display: block;
+          float: right;
+          height: 20px;
+          margin: 1em 0;
+          overflow: hidden;
+          text-indent: -9999px;
+          width: 40px; }
+      }
+
+      #main-menu {
+        .block {
+          @include clearfix();
+
+          ul.menu {
+            float: left;
+            position: relative;
+            clear: both;
+            width: 100%;
+
+            li {
+              float: left;
+              width: 100%;
+              margin: 0;
+              padding: 0;
+
+              &.last {
+                a span.border {
+                  display: none; }
+              }
+              a {
+                background-color: $main-menu-background;
+                color: #fff;
+                font-size: $base-font-size;
+                padding: ($column-gutter / 4) 0;
+                position: relative;
+
+                span.image,
+                span.arrow,
+                span.description {
+                  display: none; }
+                span.border {
+                  background: lighten($main-menu-background, 20%);
+                  bottom: 0;
+                  display: block;
+                  height: 1px;
+                  position: absolute;
+                  top: auto;
+                  width: 100%;
+                  z-index: 1; }
+              }
+
+              // Override animation behavior of full menu.
+              // @see Drupal.behaviors.nprdd_ui.mainMenu()
+              ul.menu {
+                display: none !important; }
+            }
+          }
+        }
+      }
+    }
+
+    @media #{$large} {
+      #mobile-menu-toggle {
+        display: none; }
+
+      #page #content #main-wrapper {
+        .main-menu-wrapper {
+          display: block !important; // Force main menu to always display at large breakpoint...fixes an issue where user was expanding/collapsing mobile menu then changes breakpoint to large.
+
+          .region-header {
+            display: none; }
+        }
+      }
+
+      #main-menu {
+        @include clearfix();
+        height: $main-menu-height;
+        width: 100%;
+
+        ul.menu {
+          &:hover {
+            @include single-box-shadow(rgba(0, 0, 0, .2), 0, 0, 8px, 0, false);
+
+            li {
+              // For hover of top-level item, show indicator arrow.
+              &:hover a span.arrow {
+                display: inline-block; }
+              &:hover li a span.arrow {
+                display: none; }
+            }
+          }
+
+          li {
+            background: $main-menu-background;
+
+            &.last {
+              > a span.border {
+                display: none; }
+            }
+            &.level-1 {
+              span.title {
+                font-size: 16px; }
+              span.description {
+                font-size: 14px; }
+            }
+            &.level-2 {
+              span.title {
+                font-size: 14px; }
+              span.description {
+                font-size: 13px; }
+              &.level-parent {
+                span.title,
+                span.image {
+                  display: none; }
+                span.description {
+                  font-size: 14px; }
+              }
+            }
+
+            a {
+              color: #fff;
+              height: $main-menu-height;
+              line-height: $main-menu-height;
+              position: relative;
+              text-align: center;
+              white-space: nowrap;
+
+              span.arrow {
+                @include default-arrow($main-menu-arrow-color);
+                display: none;
+                margin: 0 8px 2px -16px; }
+              span.image {
+                display: none; }
+              span.border {
+                background: $main-menu-border-color;
+                display: block;
+                height: 24px;
+                margin: (($main-menu-height - 24) / 2) 0;
+                position: absolute;
+                right: 0;
+                top: 0;
+                width: 1px; }
+            }
+
+            ul.menu {
+              @include single-box-shadow(rgba(0, 0, 0, .2), 0, 6px, 8px, 0, false);
+              @include equal-width-children(large);
+              background: $main-menu-background-hover;
+              display: none;
+              left: 0;
+              position: absolute;
+              top: $main-menu-height;
+              width: 100%;
+              z-index: 200;
+
+              li {
+                @include opacity(1);
+                @include radius(0);
+                background: transparent;
+                height: 200px;
+
+                a {
+                  @include clearfix();
+                  @include menu-child-description-layout();
+                  border: 0;
+                  display: block;
+                  height: 100%;
+                  line-height: normal;
+                  margin: 0;
+                  padding: ($column-gutter / 2);
+                  text-align: left;
+                  white-space: normal;
+
+                  span.border {
+                    height: 88%;
+                    margin: ($column-gutter / 2) 0 0 0; }
+                }
+
+                // Always hide tertiary-level items.
+                ul.menu {
+                  display: none !important; }
+              }
+            }
+          }
+        }
+
+        @content;
+      }
+
+    }
+  }
+
+// Content styles.
+  @mixin content() {
+    #content {
+      #main-wrapper {
+        background-color: $intro-background-color; }
+
+      @include content-intro-text();
+      @content;
+    }
+  }
+
+  @mixin highlighted(
+    $background: $footer-background-color,
+    $font-color: $footer-font-color
+  ) {
+    #highlighted {
+      background: $background;
+      color: $font-color;
+      line-height: 1;
+      overflow: hidden;
+
+      @content;
+    }
+  }
+
+// Footer styles.
+  @mixin footer(
+    $background: $footer-background-color,
+    $font-color: $footer-font-color,
+    $height: $footer-height
+  ) {
+    #footer {
+      background: $background;
+      color: $font-color;
+      line-height: 1;
+      overflow: hidden;
+
+      #footer-inner {
+        margin-bottom: 1em;
+        margin-top: 1em; }
+      p.copyright {
+        color: $font-color; }
+      .block-menu-menu-footer-menu ul.menu li {
+        line-height: 1;
+        margin: 0 .5em 0 0;
+
+        a {
+          border-color: $font-color;
+          border-style: solid;
+          border-width: 0;
+          border-right-width: 1px;
+          color: $font-color;
+          padding: 0 .5em 0 0; }
+      }
+
+      @content;
+    }
+
+    @media #{$small-to-medium} {
+      #footer {
+        .block-menu-menu-footer-menu ul.menu li {
+          &.last a {
+            border: 0; }
+        }
+      }
+    }
+
+    @media #{$large} {
+
+      @include sticky-footer(($height / 2), "#page", "#footer-mask", "#footer");
+      body.footer-highlighted {
+        @include sticky-footer($height, "#page", "#footer-mask", "#footer");
+      }
+
+      #footer {
+        #footer-inner {
+          bottom: 0;
+          position: absolute; }
+        p.copyright {
+          line-height: 1;
+          margin: 0; }
+        .block-menu-menu-footer-menu ul.menu {
+          float: right;
+          margin: 0;
+
+          li {
+            margin: 0 0 0 .5em;
+
+            &.first a {
+              border: 0; }
+            a {
+              border-left-width: 1px;
+              border-right: 0;
+              padding: 0 0 0 .5em; }
+          }
+        }
+      }
+    }
+  }
+
+// Responsive image styles.
+  @media #{$screen} {
+    .image-mask-circle {
+      @include radius(50%);
+      background: transparent;
+      border: solid 10px darken($body-bg, 7%);
+      display: block;
+      margin: 0 auto $paragraph-margin-bottom auto;
+      overflow: hidden;
+
+      img {
+        display: block;
+        margin: 0 auto;
+        height: 100%;
+        width: 100%; }
+    }
+  }
+  @media #{$small} {
+    .image-mask-circle {
+      margin-left: 10%;
+      margin-right: 10%; }
+  }
+  @media #{$medium} {
+    .image-mask-circle {
+      margin-left: 30%;
+      margin-right: 30%; }
+  }
+  @media #{$large} {
+    .image-mask-circle {
+      height: 290px;
+      width: 290px; }
+  }
+
+// Breakpoint styles.
+  @media #{$screen} {
+    // Make headers behave the same across breakpoints...Foundation does
+    // some funky stuff in components/type.
+    h1 { font-size: $h1-font-size; }
+    h2 { font-size: $h2-font-size; }
+    h3 { font-size: $h3-font-size; }
+    h4 { font-size: $h4-font-size; }
+    h5 { font-size: $h5-font-size; }
+    h6 { font-size: $h6-font-size; }
+
+    %header-anchor {
+      color: $header-font-color;
+      &:hover {
+        @include single-transition(color);
+        color: darken($header-font-color, 10%); }
+    }
+    h1 a, h2 a, h3 a, h4 a, h5 a, h6 a {
+      @extend %header-anchor;
+    }
+  }
+
+  @mixin breakpoint-small() {
+
+    @media #{$small-to-medium} {
+
+      // Something funky going on w/Foundation row nesting...default output
+      // of width:auto triggers h scroll bar. Force 100% instead here.
+      .row .row { width: 100%; }
+
+      // Force .large-N grids to 100%.
+      %column-fullwidth-1 { width: 100%; }
+      @for $i from 1 through $total-columns {
+        .row .columns.large-#{$i}, .row .columns.large-#{$i} .block.columns { @extend %column-fullwidth-1; }
+      }
+
+      // Hide admin menu.
+      body.admin-menu {
+        margin-top: 0 !important;
+        #admin-menu {
+          display: none; }
+      }
+
+      .right {
+        float: none !important; }
+
+      // Header styles.
+      #header {
+        height: auto;
+
+        .row .columns {
+          // Rely on copied $page['header'] var in page.tpl.php instead.
+          &:last-child,
+          .region-header {
+            display: none;
+          }
+        }
+      }
+
+      #page #content #main-wrapper {
+        @include radius(0);
+        @include single-box-shadow(rgba(0, 0, 0, .2), 0, $global-radius, $global-radius, -($global-radius / 2), inset);
+        background: $intro-background-color;
+
+        .main-menu-wrapper {
+          @include single-box-shadow(rgba(0, 0, 0, .2), 0, $global-radius, $global-radius, -($global-radius / 2), false);
+          background-color: $main-menu-background;
+          display: none; // Collapse menu by default.
+
+          .region-header,
+          #main-menu {
+            @include grid-column(12);
+
+            .block {
+              margin: 1em 0 0 0;
+              padding: 0;
+              width: 100%;
+            }
+          }
+
+          .region-header {
+            button,
+            .button {
+              width: 100%; }
+          }
+          #main-menu .block {
+            margin: 1em 0; }
+        }
+        .breadcrumbs-wrapper {
+          @include radius(0);
+        }
+        .content-wrapper {
+          body.front & {
+            @include radius(0);
+          }
+        }
+      }
+
+      #footer {
+        background: $body-bg; }
+
+      @content;
+    }
+
+    @media #{$small} {
+      #page #content #main-wrapper {
+/*        .breadcrumbs-wrapper {
+          background-color: $body-bg; }
+        .content-wrapper {
+          background-color: $body-bg; }*/
+      }
+    }
+  }
+
+  @mixin breakpoint-medium() {
+    @media #{$medium} {
+      @content;
+    }
+  }
+
+  @mixin breakpoint-large() {
+    @media #{$large} {
+      // Reset .large-N grids to default.
+      @for $i from 1 through $total-columns {
+        .row .large-#{$i} { @include grid-column($i); }
+      }
+
+      // Fullwidth mask support (needed to clip edges of wrapper curves).
+      #page,
+      #footer {
+        overflow-x: hidden;
+        width: 100%;
+      }
+      #page-inner,
+      #footer-inner {
+        margin-left: -2.5%;
+        padding: 0 2%;
+        width: 105%;
+      }
+
+      @content;
+    }
+  }

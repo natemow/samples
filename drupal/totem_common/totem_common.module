@@ -1,0 +1,1804 @@
+<?php
+/**
+ * @file
+ * totem_common.module
+ */
+
+require_once 'totem_common.features.inc';
+require_once 'includes/totem_common.theme.inc';
+require_once 'includes/totem_common.block.inc';
+require_once 'includes/totem_common.form.inc';
+require_once 'includes/totem_common.pages.inc';
+require_once 'includes/totem_common.ie.inc';
+
+define('PAGE_SIZE_LISTS_TEASER', 5);
+define('PAGE_SIZE_LISTS_PAGE', 20);
+
+// Private helper functions.
+/**
+ * TODO.
+ */
+function _totem_common_system_max_weight($name, $type = 'module') {
+  // Give this module heaviest weight.
+  $query  = db_select('system', 's')->condition('type', $type, '=');
+  $query->addExpression('MAX(weight)', 'max_weight');
+  $weight = $query->execute()->fetchField();
+
+  db_update('system')
+    ->fields(array('weight' => $weight + 100))
+    ->condition('name', $name)
+    ->execute();
+}
+/**
+ * Wrapper funtion for the EntityFieldQuery object.
+ *
+ * @param $vars
+ *   Associative array containing the following:
+ *   - TODO
+ *
+ * @return
+ *   Rendered HTML for the entity results.
+ */
+function _totem_common_efq($vars) {
+  module_load_include('inc', 'totem_common', 'includes/totem_common.efq');
+  $obj = new TotemEntityFieldQuery($vars);
+
+  return $obj;
+}
+/**
+ * TODO.
+ */
+function _totem_common_efq_extract_query(&$items) {
+
+  // Loop invocation results and find the first element containing the
+  // "query" element, which will contain the full EFQ wrapper object.
+  /*
+  * TODO: Improve this?? This foreach is kind of a hack to account for
+  * variations in return array structures in
+  * hook_node_community_ENTITY_TYPE implementations. Until all hooks
+  * are standardized, this has to stay.
+  */
+  if (!empty($items)) {
+    foreach ($items as $key => &$meta) {
+      if (is_array($meta) && !empty($meta['query'])) {
+        return $meta['query'];
+        break;
+      }
+    }
+  }
+
+  return NULL;
+}
+/**
+ * Execute a range query for fields/properties common to multiple entity types,
+ * using the 'page' querystring parameter if it's set,
+ * and set global pager variables accordingly.
+ *
+ * @param array $vars
+ *   An associative array containing some options and conditions for the query:
+ *   - entity_type: array of types to include. Only 'user', 'node', and
+ *     'comment' are supported; defaults to all of those.
+ *   - placeholders: array of named placeholders to pass into db_query_range().
+ *   - limit: number of results per page.
+ *   - order_by: a SQL order-by statement, where 'pool' is the alias of the
+ *     table of results across all included entities.
+ *
+ * @return array:
+ *   - 'query' => DatabaseStatementInterface $query
+ *     The executed Drupal query object, as returned from db_query_range(), containing the results.
+ *   - 'meta' => array
+ *     Associative array containing calculated paging-related numbers.
+ *
+ * @see db_query_range()
+ */
+function _totem_common_entity_range_query($vars) {
+
+  // Set up default values.
+  $vars_base = array(
+    'entity_type' => array('user', 'node', 'comment'),
+    'placeholders' => array(),
+    'limit' => PAGE_SIZE_LISTS_PAGE,
+    'order_by' => 'ORDER BY pool.created DESC',
+  );
+
+  // Merge args to base.
+  $vars = array_merge($vars_base, $vars);
+
+  // Make sure there are corresponding placeholders for each entity_type
+  // requested. This fixes the fatal SQL error for "WHERE nid IN ()".
+  foreach ($vars['entity_type'] as $entity_type) {
+    if (empty($vars['placeholders'][':entity_id_' . $entity_type])) {
+      $vars['placeholders'][':entity_id_' . $entity_type] = array('0');
+    }
+  }
+
+
+  // Select all fields common to entities; calling functions use those they need.
+  $fields = array(
+    'pool.entity_id',
+    'pool.entity_type',
+    'pool.title',
+    'pool.created',
+  );
+
+  // Build entity-specific sub-queries.
+  $sql_entities = array();
+
+  foreach ($vars['entity_type'] as $entity_type) {
+
+    $sql_entity = "";
+
+    switch ($entity_type) {
+      case 'user':
+        $sql_entity = "
+        SELECT  u.uid AS entity_id, TRIM(COALESCE(ln.field_name_last_value, u.name)) AS title, 'user' AS entity_type, u.created AS created
+        FROM    {users} AS u
+        JOIN    {field_data_field_name_last} AS ln ON ln.entity_id = u.uid
+        AND     ln.entity_type = 'user'
+        WHERE   u.status = 1
+        AND     u.uid IN (:entity_id_user) ";
+        break;
+
+      case 'node':
+        $sql_entity = "
+        SELECT n.nid AS entity_id, n.title AS title, 'node' AS entity_type, n.created AS created
+        FROM {node} n
+        WHERE n.nid IN (:entity_id_node)
+        AND n.status = 1 ";
+        break;
+
+      case 'comment':
+        $sql_entity = "
+        SELECT c.cid AS entity_id, 'Untitled' as title, 'comment' AS entity_type, c.created AS created
+        FROM {comment} c
+        WHERE c.cid IN (:entity_id_comment) ";
+        break;
+    }
+
+    if (!empty($sql_entity)) {
+      // Only include subquery if there are corresponding placeholders.
+      if (!empty($vars['placeholders'][':entity_id_' . $entity_type])) {
+        $sql_entities[$entity_type] = $sql_entity;
+      }
+    }
+
+  }
+
+
+  $sql = "SELECT %s FROM (" . implode(" UNION ALL ", $sql_entities) . ") AS pool ";
+
+  // Set count query.
+  $sql_count = vsprintf($sql, array("COUNT(CONCAT(pool.entity_type, '_', pool.entity_id)) AS rowcount"));
+
+  // Set fields for SELECT.
+  $sql = vsprintf($sql, array(implode(',', $fields)));
+
+  // Add ORDER BY.
+  $sql .= $vars['order_by'];
+
+  // Set row and page counts.
+  $total = db_query($sql_count, $vars['placeholders'])->fetchField();
+  $pages = floor($total / $vars['limit']);
+  if ($total > ($pages * $vars['limit'])) {
+    $pages++;
+  }
+
+  $page = pager_find_page();
+  $from = ($page * $vars['limit']);
+
+  pager_default_initialize($total, $vars['limit']);
+
+  // Execute range query.
+  $query = db_query_range($sql, $from, $vars['limit'], $vars['placeholders']);
+
+
+  // Return the query along with paging-related numbers we've computed.
+  return array(
+    'query' => $query,
+    'pager' => array(
+      '#markup' => _totem_common_get_pager(array(
+        'quantity' => $total,
+      )),
+      'current_page' => (int) $page,
+      'from' => (int) $from,
+      'count_pages' => (int) $pages,
+      'count_results' => (int) $total,
+    ),
+  );
+
+}
+/**
+  * Set custom "View more" pager markup.
+  */
+function _totem_common_get_pager($vars) {
+  $pager_core = theme('pager', $vars);
+
+  $pager_custom = '';
+
+  if (!empty($pager_core)) {
+    $pager_custom .= l(t('View More <span></span>'), '#', array(
+      'html' => TRUE,
+      'attributes' => array(
+        'id' => 'pager-view-more-' . PagerDefault::$maxElement,
+        'class' => array('pager-view-more', 'btn', 'corners'),
+      )
+    ));
+  }
+  else {
+    // JS always needs this id present.
+    $pager_custom .= '<span id="pager-view-more-' . PagerDefault::$maxElement . '"></span>';
+  }
+
+  $pager_custom .= $pager_core;
+
+  if (!empty($pager_custom)) {
+    $pager_custom = '<div class="pager clearfix">' . $pager_custom . '</div>';
+  }
+
+  return $pager_custom;
+}
+
+/**
+ * Recursively get visible form elements.
+ */
+function _totem_common_get_form_elements(array &$input_form) {
+  $visible_children = array();
+
+  foreach (element_children($input_form) as $key) {
+    $child = $input_form[$key];
+
+    // If the child is an array recursively search in it.
+    if ((is_array($child)) && (!empty($child))) {
+      _totem_common_get_form_elements($child);
+    }
+
+    // Skip un-accessible children.
+    if (isset($child['#access']) && !$child['#access']) {
+      continue;
+    }
+
+    // Skip value and hidden elements, since they are not rendered.
+    if (isset($child['#type']) && in_array($child['#type'], array('value', 'hidden'))) {
+      continue;
+    }
+    $visible_children[$key] = $child;
+  }
+  if (!empty($visible_children)) {
+    return $visible_children;
+  }
+  else {
+    return FALSE;
+  }
+}
+/**
+ * Returns (enabled) node types added by the profile features.
+ */
+function _totem_common_node_types($filter_resource_types = FALSE, $reset = FALSE) {
+
+  $types = &drupal_static(__FUNCTION__);
+
+  if (empty($types) || $reset) {
+    node_type_cache_reset();
+    // Note that this calls _node_types_build() with the $rebuild parameter
+    // defaulting to FALSE. Thus, the result set *excludes* any disabled types.
+    // @see _node_types_build()
+    $node_types = node_type_get_types();
+    $prefix = 'totem_';
+
+    module_load_include('inc', 'totem_common', 'includes/totem_common.inflect');
+
+    foreach ($node_types as $type => &$meta) {
+      // Add field to denote "Resource" types.
+      $meta->is_resource = 0;
+      // Add URL paths.
+      $meta->path = str_replace('_', '-', $type);
+      $meta->path_plural = Inflect::pluralize($meta->path);
+      // Add plural of type name.
+      $meta->name_plural = ucwords(Inflect::pluralize($meta->name));
+
+      if (strpos($meta->module, $prefix) === 0) {
+        $types[$type] = $meta;
+      }
+      elseif (variable_get('totem_common_resource_' . $type)) {
+        $meta->is_resource = 1;
+        $meta->path = "resources/{$meta->path}";
+        $meta->path_plural = "resources/{$meta->path_plural}";
+        $types[$type] = $meta;
+      }
+    }
+  }
+
+  if ($filter_resource_types) {
+    $resources = array();
+    foreach ($types as $type => $meta) {
+      if ($meta->is_resource) {
+        $resources[$type] = $meta;
+      }
+    }
+
+    return $resources;
+  }
+
+  return $types;
+}
+/**
+ * Filters an array of node types to only those that are enabled.
+ */
+function _totem_common_filter_node_types_to_enabled(&$types) {
+  $enabled_types = array_keys(_totem_common_node_types());
+  $types = array_intersect($types, $enabled_types);
+}
+/**
+ * Info on node types via _totem_common_node_types()
+ * augmented by hardcoded objects for users, recent entities, and orphans.
+ */
+function _totem_common_types_info($reset = FALSE) {
+  $types_node = _totem_common_node_types(FALSE, $reset);
+
+  $types_other = array(
+    'user' => (object) array(
+      'type' => 'user',
+      'name' => 'Member',
+      'name_plural' => 'Members',
+      'is_resource' => 0,
+      'path' => 'user',
+      'path_plural' => 'members',
+    ),
+    'recent' => (object) array(
+      'type' => 'recent',
+      'name' => 'Recent Activity',
+      'name_plural' => 'Recent Activity',
+      'is_resource' => 0,
+      'path' => 'recent',
+      'path_plural' => 'recent',
+    ),
+    'orphan' => (object) array(
+      'type' => 'orphan',
+      'name' => 'Orphaned Content',
+      'name_plural' => 'Orphaned Content',
+      'is_resource' => 0,
+      'path' => 'orphan',
+      'path_plural' => 'orphans',
+    )
+  );
+
+  $types = array_merge($types_other, $types_node);
+
+  // Set "No results found" text per type.
+  // @see totem_common_form_node_type_form_alter()
+  foreach ($types as $key => &$meta) {
+    $meta->no_results_text_community = variable_get("totem_common_no_results_text_community_{$key}", t('<p>No @name_plural have been added yet. Please add some @name_plural to view your content here.</p>', array(
+      '@name_plural' => t($meta->name_plural),
+    )));
+
+    $meta->no_results_text_community_private_filter_active = variable_get("totem_common_no_results_text_community_private_filter_active_{$key}", $meta->no_results_text_community);
+
+    $meta->no_results_text_user = variable_get("totem_common_no_results_text_user_{$key}", t('<p>You have not added any @name_plural yet. Please add some @name_plural to view your content here.</p>', array(
+      '@name_plural' => t($meta->name_plural),
+    )));
+  }
+
+  return $types;
+}
+/**
+ * Make sure all resource types have a corresponding menu item.
+ */
+function _totem_common_set_resources_menu_items() {
+
+  // Get community menu links.
+  $menu_name = 'menu-community-menu';
+  $menu_data = menu_load_links($menu_name);
+  $menu_parent_path = 'resources';
+  $mlid_parent = NULL;
+
+  // Get resources mlid.
+  foreach ($menu_data as $meta) {
+    if ($meta['link_path'] == $menu_parent_path) {
+      $mlid_parent = $meta['mlid'];
+      break;
+    }
+  }
+
+  // Delete all resource links and re-add.
+  if (!empty($mlid_parent)) {
+    $types = _totem_common_node_types(TRUE, TRUE);
+    foreach ($types as $key => $meta) {
+
+      $t = get_t();
+
+      @menu_link_delete(NULL, $meta->path_plural);
+
+      $child = array(
+        'link_path' => $meta->path_plural,
+        'link_title' => $meta->name_plural,
+        'menu_name' => $menu_name,
+        'mlid' => NULL,
+        'plid' => $mlid_parent,
+        'module' => 'totem_common',
+      );
+
+      @menu_link_save($child);
+    }
+
+    menu_cache_clear($menu_name);
+  }
+
+  // Return $child stub in case caller wants to take further action on
+  // Resources menu items.
+  return array(
+    'link_path' => NULL,
+    'link_title' => NULL,
+    'menu_name' => $menu_name,
+    'mlid' => NULL,
+    'plid' => $mlid_parent,
+    'module' => 'menu',
+  );
+}
+/**
+ * Checks that a node is of a particular type.
+ */
+function _totem_common_node_type_check($node, $type) {
+
+  $args = func_get_args();
+  unset($args[0]);
+
+  if (in_array($node->type, $args)) {
+    return TRUE;
+  }
+
+  return FALSE;
+}
+/**
+ * Function to quickly add stringoverrides translation substitution.
+ */
+function _totem_common_set_custom_string($source, $translation) {
+
+  // Save into the correct language definition.
+  global $language;
+  $lang = $language->language;
+
+  $words = variable_get('locale_custom_strings_' . $lang);
+  if (empty($words)) {
+    $words = array('' => array());
+  }
+
+  foreach ($words as $index => &$string) {
+    $string[$source] = $translation;
+  }
+
+  variable_set('locale_custom_strings_' . $lang, $words);
+}
+/**
+ * Check current path for a $paths match.
+ */
+function _totem_common_is_path_match($paths) {
+  $paths = trim($paths);
+  $path  = drupal_strtolower(drupal_get_path_alias($_GET['q']));
+
+  // Get paths that should use $common_template_suggestion
+  $paths = drupal_strtolower($paths);
+
+  // Compare the lowercase internal and lowercase path alias (if any).
+  $path_match = drupal_match_path($path, $paths);
+  if ($path != $_GET['q']) {
+    $path_match = $path_match || drupal_match_path($_GET['q'], $paths);
+  }
+
+  return $path_match;
+}
+/**
+ * Callback function for hook_theme_registry_alter implementations.
+ */
+function _totem_common_theme_registry_alter(&$theme_registry, $path) {
+  global $theme_key;
+
+  $theme_registry_copy = $theme_registry;
+  _theme_process_registry($theme_registry_copy, 'phptemplate', 'theme_engine', $theme_key, $path);
+  $theme_registry += array_diff_key($theme_registry_copy, $theme_registry);
+
+  // $theme_registry[KEY] isn't specific to the $path arg being passed; we just
+  // need to make sure $path gets added to at least 1 $theme_registry array.
+  if (!isset($theme_registry['page']['theme paths'])) {
+    $theme_registry['page']['theme paths'] = array();
+  }
+
+  if (is_array($theme_registry['page']['theme paths'])) {
+    $first_element = array_shift($theme_registry['page']['theme paths']);
+
+    array_unshift(
+      $theme_registry['page']['theme paths'], $first_element, $path
+    );
+  }
+}
+/**
+ * Make sure default images live within public://default_images, because
+ * theme_image_style() can only run successfully within directories registered
+ * to a scheme. Note: default_images is the dir where image fields store their
+ * default images.
+ *
+ * $src_filepath: normal path+filename (not URI)
+ * $dest_filepath: path+filename at which to place file, within
+ * public://default_images. NO leading slash.
+ * $managed: boolean whether the file is to be managed via Drupal File API,
+ * i.e. saved to db
+ *
+ * @return
+ *   If $managed, the fid of $file saved to database, or FALSE on various
+ *   failures.
+ *   Else, the new filepath, as returned by file_unmanaged_copy(), or FALSE on
+ *   various failures.
+ */
+function _totem_common_put_default_image($src_filepath, $dest_filepath, $managed) {
+  // This is where image fields put their defaults.
+  $dir           = 'default_images';
+  $dest_filename = $dest_filepath;
+
+  // If $dest_filepath contains a directory and filename
+  // structure, pull it apart.
+  $slash = strrpos($dest_filepath, '/');
+  if ($slash !== FALSE) {
+    $dir .= ('/' . drupal_substr($dest_filepath, 0, $slash));
+    $dest_filename = drupal_substr($dest_filepath, $slash + 1);
+  }
+
+  // Function file_unmanaged_copy() calls file_prepare_directory()
+  // with default value for $options, which is only to update the permissions.
+  // Thus we ensure directory exists first.
+  $dir_uri = file_build_uri($dir);
+  file_prepare_directory($dir_uri, FILE_CREATE_DIRECTORY);
+
+  if (!$managed) {
+    return file_unmanaged_copy($src_filepath, $dir_uri . '/' . $dest_filename, FILE_EXISTS_REPLACE);
+  }
+  else {
+    // Function file_copy() takes a $file object as $source;
+    // passes $source->uri to file_unmanaged_copy(), thus it can be a path.
+    // Clones $source to save new $file to db (overwrites fid, uri, filename).
+    $source    = new stdClass();
+    $source->uri = $src_filepath;
+    $source->filemime = file_get_mimetype($src_filepath);
+    $source->status = FILE_STATUS_PERMANENT;
+    $dest_file = file_copy($source, $dir_uri . '/' . $dest_filename, FILE_EXISTS_REPLACE);
+    return $dest_file !== FALSE ? $dest_file->fid : FALSE;
+  }
+}
+/**
+ * Given a URI, load markup for all image styles
+ * $args are all optional: styles, width, height, alt, title, attributes
+ * - styles: a string for one style_name to load, or array of style_names to load
+ */
+function _totem_common_image_styles($uri, $args = array()) {
+
+  $args['path'] = $uri;
+
+  // Function theme_image_style() specifically references these, so they have
+  // to be set.
+  $defaults = array(
+    'width' => NULL,
+    'height' => NULL
+  );
+
+  $args = array_merge($defaults, $args);
+
+  // Hold the generated markup.
+  $images = array();
+
+  $single = FALSE;
+
+  $styles = image_styles();
+
+  if (isset($args['styles'])) {
+    if (!is_array($args['styles'])) { // single style name passed as string
+      $args['styles'] = array($args['styles']);
+      $single = TRUE;
+    }
+    $styles = array_intersect_key($styles, array_flip($args['styles']));
+  }
+
+  $class_index = isset($args['attributes']['class']) ? count($args['attributes']['class']) : 0;
+
+  foreach ($styles as $key => $meta) {
+    $images[$key] = NULL;
+
+    $args['style_name'] = $key;
+
+    // Don't overwrite any attributes that may already be in place;
+    // just ensure we have a standard class indicating the style used.
+    $args['attributes']['class'][$class_index] = drupal_html_class($key);
+    $images[$key] = theme_image_style($args);
+  }
+
+  return $single ? $images[$key] : $images;
+}
+/**
+ * Global modal init function.
+ */
+function _totem_common_modal_link($vars) {
+
+  // Load CTools depends and set modal options
+  ctools_include('modal');
+  ctools_include('ajax');
+  ctools_modal_add_js();
+
+  $modal_defaults = array(
+    'CToolsModal' => array(
+      'loadingText' => t('Loading...'),
+      'closeText' => t('Close'),
+      'closeImage' => theme('image', array(
+        'path' => ctools_image_path('icon-close-window.png'),
+        'title' => t('Close'),
+        'alt' => t('Close'),
+      )),
+      'throbber' => theme('image', array(
+        'path' => ctools_image_path('throbber.gif'),
+        'title' => t('Loading...'),
+        'alt' => t('Loading'),
+      )),
+      'animation' => 'fadeIn',
+      'modalSize' => array(
+        'width' => '.8',
+        'height' => '.8',
+      ),
+      'modalOptions' => array(
+        'background' => '#000',
+      ),
+    ),
+  );
+
+  $vars['modal_settings'] = (!empty($vars['modal_settings']) ? array_merge($modal_defaults, $vars['modal_settings']) : $modal_defaults);
+  $vars['text']           = t('@text', array('@text' => $vars['text']));
+
+  if (empty($vars['class'])) {
+    $vars['class'] = array('btn', 'corners');
+  }
+
+  drupal_add_js($vars['modal_settings'], 'setting');
+
+  return ctools_modal_text_button(
+      $vars['text'], $vars['path'], $vars['text'], implode(' ', $vars['class'])
+  );
+}
+/**
+ * Global modal attributes function.
+ */
+function _totem_common_modal_link_attributes_ensure($href, &$attributes) {
+
+  if (stristr($href, 'modal/')) {
+    $attributes['class'][] = 'ctools-use-modal';
+  }
+
+  // Add custom rel attribute so each modal can be sized via CSS.
+  // @see totem_common.js()
+  if (!empty($attributes['class']) && in_array('ctools-use-modal', $attributes['class'])) {
+    // Remove leading slash.
+    if (drupal_substr($href, 0, 1) == '/') {
+      $href = drupal_substr($href, 1);
+    }
+    // Be sure to omit query vars here.
+    $path = parse_url($href);
+    if (!empty($path['path'])) {
+      $path_parts = explode('/', $path['path']);
+      $path_class = '';
+
+      // In case $href has already been run through hook_url_outbound_alter()
+      // implementations (e.g. node URLs passed in during preprocessing), check
+      // for an aliased community node path and replace it with its system path
+      // to avoid sticking a dynamic non-numeric component in rel and class.
+      // @see _totem_common_url_outbound_alter()
+      if ($path_parts[0] == 'community') {
+        // Are the first two components a community node alias?
+        $community_path_system = drupal_lookup_path('source', $path_parts[0] . '/' . $path_parts[1]);
+        if (preg_match('/node\/[0-9]+/', $community_path_system)) {
+          $community_path_system_parts = explode('/', $community_path_system);
+          $path_parts[0] = $community_path_system_parts[0];
+          $path_parts[1] = $community_path_system_parts[1];
+        }
+      }
+
+      // Strip any numeric path parts.
+      foreach ($path_parts as $part) {
+        if (!is_numeric($part)) {
+          $path_class .= $part . '-';
+        }
+      }
+      $path_class = trim($path_class, '-');
+
+      $attributes['rel'] = 'ctools-modal-target-' . drupal_html_class($path_class);
+    }
+  }
+
+}
+/**
+ * TODO.
+ */
+function _totem_common_session_set($key, $val) {
+  if (!empty($key)) {
+    $_SESSION['totem'][$key] = $val;
+  }
+}
+/**
+ * TODO.
+ */
+function _totem_common_session_get($key) {
+
+  if (!empty($_SESSION) && array_key_exists('totem', $_SESSION)) {
+    if (array_key_exists($key, $_SESSION['totem'])) {
+      return $_SESSION['totem'][$key];
+    }
+  }
+
+  return NULL;
+}
+/**
+ * TODO.
+ */
+function _totem_common_generate_sharethis($path_alter = NULL, $url_options = array()) {
+
+  if (variable_get('sharethis_location', 'content') == 'block') {
+    // First get all of the options for the sharethis widget from the database:
+    $data_options            = sharethis_get_options_array();
+
+    $url_options['absolute'] = TRUE;
+
+    if (!empty($path_alter)) {
+      $path = $path_alter;
+    }
+    else {
+      $path = isset($_GET['q']) ? $_GET['q'] : '<front>';
+    }
+    $m_path = url($path, $url_options);
+
+    $m_title = drupal_get_title();
+
+    // Make sure init runs on AJAX requests too.
+    // @see http://drupal.org/node/1197104
+    $unready = "";
+    if (!empty($_POST['js']) && $_POST['js'] == TRUE) {
+      // Revert the global ShareThis variable intended to prevent multiple init runs.
+      $unready = "<script type='text/javascript'>stLight.readyRun = false;</script>";
+    }
+
+    return array(
+      '#markup' => $unready . sharethis_get_button_HTML($data_options, $m_path, $m_title),
+    );
+  }
+}
+/**
+ * TODO.
+ */
+function _totem_common_get_field_entityreference_values($entity_type, $entity, $field_name) {
+
+  $entity_id = array();
+
+  if (is_string($entity)) {
+    return $entity_id;
+  }
+
+  if (empty($entity->{$field_name})) {
+    switch ($entity_type) {
+      case 'node':
+        $entity = node_load($entity->nid);
+        break;
+
+      case 'user':
+        $entity = user_load($entity->uid);
+        break;
+    }
+  }
+
+  // Get entity's field_community LOV.
+  $items = field_get_items($entity_type, $entity, $field_name);
+  if (!empty($items)) {
+    foreach ($items as $ix => &$meta) {
+      $entity_id[] = $meta['target_id'];
+    }
+  }
+
+  return $entity_id;
+}
+/**
+ * TODO.
+ */
+function _totem_common_set_field_entityreference_values($entity_type, $entity, $field_name, $nids = array(), $remove = FALSE) {
+
+  if (!empty($nids)) {
+    $obj = entity_metadata_wrapper($entity_type, $entity);
+    // Double check that the entity has this field.
+    if (isset($obj->{$field_name})) {
+      $old = $obj->{$field_name}->value();
+      $new = array();
+      $delta = array();
+
+      if ($remove) {
+        // Remove nids from field_community LOV.
+        foreach ($old as $ix => &$meta) {
+          if (!in_array($meta->nid, $nids)) {
+            $new[] = $meta->nid;
+          }
+          else {
+            $delta[] = $meta->nid;
+          }
+        }
+      }
+      else {
+        // Add nids to field_community LOV.
+        foreach ($old as $ix => &$meta) {
+          $new[] = $meta->nid;
+        }
+
+        foreach ($nids as $nid) {
+          if (!in_array($nid, $new)) {
+            $new[]   = $nid;
+            $delta[] = $nid;
+          }
+        }
+      }
+
+      $obj->{$field_name} = $new;
+      $obj->save();
+
+      if (!empty($delta)) {
+        $nodes = node_load_multiple($delta);
+
+        $titles = array();
+        foreach ($nodes as $ix => $node) {
+          $titles[] = check_plain($node->title);
+        }
+
+        watchdog(
+          variable_get('install_profile', 'totem'),
+          '@entity_type: @action @field_name %titles.',
+          array(
+            '@entity_type' => $entity_type,
+            '@action' => ($remove ? 'removed' : 'added'),
+            '@field_name' => $field_name,
+            '%titles' => implode(', ', $titles),
+          )
+        );
+      }
+
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+/**
+ * TODO.
+ */
+function _totem_common_url_outbound_alter(&$path, &$options, $original_path, $node_type, $subpath) {
+
+  if (!empty($options['entity_type']) && $options['entity_type'] == 'node') {
+    if ($options['entity']->type == $node_type) {
+      if (empty($options['alias'])) {
+        $nid_community = _totem_common_get_field_entityreference_values($options['entity_type'], $options['entity'], 'field_community');
+        if (!empty($nid_community)) {
+
+          $node_community_context = NULL;
+          if (!empty($options['entity_context_community'])) {
+            $node_community_context = $options['entity_context_community'];
+          }
+          if (empty($node_community_context)) {
+            $node_community_context = _totem_common_get_community_context_node();
+          }
+
+          if (!empty($node_community_context) && in_array($node_community_context->nid, $nid_community)) {
+            // Node could belong to more than one community;
+            // Acknowledge context here.
+            $nid_community = $node_community_context->nid;
+          }
+          else {
+            $nid_community = $nid_community[0];
+          }
+
+          // Attach whatever $nid_community was found; caller may need this.
+          $options['entity_context_community'] = (object) array('nid' => $nid_community);
+
+          // Set path alias.
+          $path = drupal_get_path_alias("node/{$nid_community}") . "/{$subpath}/";
+
+          // Check custom property to set AJAX path. Note that "nojs" is a
+          // magic string that core uses to toggle between /ajax and /nojs
+          // requests.
+          if (!empty($options['entity']->url_outbound_set_ajax_path)) {
+            $path .= "nojs/";
+          }
+
+          $path .= $options['entity']->nid;
+          $options['alias'] = $path;
+        }
+      }
+    }
+  }
+
+}
+/**
+ * TODO.
+ */
+function _totem_common_get_node_from_request_path($arg_num = NULL) {
+
+  // TODO: Can we replace _totem_common_get_community_context_node ops with
+  // this stuff?? Way more stable across different HTTP status responses.
+
+  $path = request_path();
+  $path = drupal_get_normal_path($path);
+  $item = menu_get_item($path);
+  $node = NULL;
+
+  if (empty($arg_num)) {
+    $arg_num = count($item['original_map']) - 1;
+  }
+
+  if (in_array($item['page_callback'], array('node_page_view', 'totem_common_node_community'))) {
+    $nid = $item['original_map'][$arg_num];
+    if (is_numeric($nid)) {
+      $node = node_load($nid);
+    }
+  }
+
+  return $node;
+}
+/**
+ * TODO.
+ */
+function _totem_common_get_community_context_node($arg_load = NULL) {
+
+  $args = arg();
+
+  foreach ($args as $arg) {
+    if (is_numeric($arg)) {
+
+      // See totem_common_context_community_load() for a non-NULL $arg_load.
+      if (!empty($arg_load)) {
+        if ($arg == $arg_load) {
+          $node = node_load($arg);
+          if (!empty($node) && $node->type == 'community') {
+            return $node;
+          }
+        }
+      }
+      else {
+        $node = node_load($arg);
+        if (!empty($node) && $node->type == 'community') {
+          return $node;
+        }
+      }
+
+    }
+  }
+
+  return FALSE;
+}
+/**
+ * Checks that a node type = community and return node_access result if TRUE.
+ */
+function _totem_common_menu_access_callback_op_community($node, $op = 'view') {
+
+  $is_community = _totem_common_node_type_check($node, 'community');
+  if ($is_community) {
+    return node_access($op, $node);
+  }
+
+  return $is_community;
+}
+/**
+ * %totem_common_context_community menu arg auto-loader.
+ */
+function totem_common_context_community_load($arg) {
+
+  $node_community = _totem_common_get_community_context_node($arg);
+  return $node_community;
+
+}
+/**
+ * %totem_common_context_community menu arg auto-load mapper.
+ */
+function totem_common_context_community_to_arg($arg, $map, $index) {
+
+  $node_community = _totem_common_get_community_context_node(NULL);
+  if (!empty($node_community)) {
+    return $node_community->nid;
+  }
+
+  return FALSE;
+}
+
+// Hook implementations.
+/**
+ * Implements hook_libraries_info().
+ */
+function totem_common_libraries_info() {
+
+  // TODO! Find info files that include version number for these libraries.
+  // Then, libraries_load() can parse out the version, and will return stating
+  // that library is installed and loaded successfully. Then it will make all
+  // necessary drupal_add_js()/drupal_add_css() calls for us.
+  // @see totem_common_preprocess_page()
+  $libraries['jquery.tooltip'] = array(
+    'name' => 'jQuery Tooltip plugin',
+    'vendor url' => 'http://bassistance.de/jquery-plugins/jquery-plugin-tooltip/',
+    // 'download url' => 'http://docs.jquery.com/Plugins/Tooltip',
+    'download url' => 'http://jquery.bassistance.de/tooltip/jquery.tooltip.zip',
+    'path' => '',
+    'version arguments' => array(
+      'file' => 'readme.txt',
+      'pattern' => '/Version (\d+)/',
+      'lines' => 5,
+    ),
+    'files' => array(
+      'js' => array(
+        'jquery.tooltip.min.js' => array(
+          'scope' => 'footer',
+        )
+      ),
+    ),
+  );
+
+  $libraries['jquery.jscrollpane'] = array(
+    'name' => 'jQuery jScroll Pane plugin',
+    'vendor url' => 'http://jscrollpane.kelvinluck.com/',
+    // 'download url' => 'http://jscrollpane.kelvinluck.com/',
+    'download url' => 'https://github.com/vitch/jScrollPane',
+    'path' => '',
+    'version arguments' => array(
+      'file' => 'readme.txt',
+      'pattern' => '/Version (\d+)/',
+      'lines' => 5,
+    ),
+    'files' => array(
+      'js' => array(
+        'script/jquery.jscrollpane.min.js' => array(
+          'scope' => 'footer',
+        )
+      ),
+      'css' => array(
+        'style/jquery.jscrollpane.css',
+      )
+    ),
+  );
+
+  $libraries['jquery.mousewheel'] = array(
+    'name' => 'jQuery Mouse Wheel plugin',
+    'vendor url' => 'http://plugins.jquery.com/project/mousewheel',
+    // 'download url' => 'https://github.com/brandonaaron/jquery-mousewheel/',
+    'download url' => 'https://github.com/brandonaaron/jquery-mousewheel',
+    'path' => '',
+    'version arguments' => array(
+      'file' => 'readme.txt',
+      'pattern' => '/Version (\d+)/',
+      'lines' => 5,
+    ),
+    'files' => array(
+      'js' => array(
+        'jquery.mousewheel.js' => array(
+          'scope' => 'footer',
+        )
+      ),
+    ),
+  );
+
+  $libraries['jquery.history'] = array(
+    'name' => 'History.js',
+    'vendor url' => 'https://github.com/balupton/history.js',
+    // 'download url' => 'https://github.com/balupton/history.js/downloads',
+    'download url' => 'https://github.com/balupton/history.js',
+    'path' => 'scripts/bundled/html5',
+    'version arguments' => array(
+      'file' => 'package.json',
+      'pattern' => '/"version": "([^"]+)"/',
+      'lines' => 3,
+      'cols' => 50,
+    ),
+    'files' => array(
+      'js' => array(
+        'jquery.history.js' => array(
+          'scope' => 'footer',
+        )
+      ),
+    ),
+  );
+
+  return $libraries;
+}
+/**
+ * Implements hook_modules_enabled().
+ */
+function totem_common_modules_enabled($modules) {
+
+  module_load_include('inc', 'features', 'features.export');
+
+  // Ensure node types defined by module are enabled when the module is enabled.
+  // @see totem_common_modules_disabled()
+  foreach ($modules as $module) {
+    // @see node_features_enable()
+    if ($default_types = features_get_default('node', $module)) {
+      foreach ($default_types as $type_name => $type_info) {
+        // Ensure the type exists.
+        if ($type_info = node_type_load($type_name)) {
+          // Note: Docs say db_update returns an UpdateQuery object, but inspection,
+          // comments, and examples indicate it returns number of rows updated.
+          $num_updated = db_update('node_type')->fields(
+            array(
+              'disabled' => 0,
+            )
+          )
+          ->condition('type', $type_name)
+          ->execute();
+
+          if ($num_updated) {
+            drupal_set_message(t("%module: The node type %type has been enabled.",
+              array(
+                '%module' => $module,
+                '%type' => $type_name,
+              )
+            ));
+          }
+        }
+      }
+    }
+  }
+}
+/**
+ * Implements hook_modules_disabled().
+ */
+function totem_common_modules_disabled($modules) {
+
+  module_load_include('inc', 'features', 'features.export');
+
+  // Ensure this module's node type is disabled when the module is disabled.
+  // (Disabling a Features module allows its types to be altered via admin UI,
+  // but otherwise leaves them untouched.)
+  // @see http://drupal.org/node/1055460, node_features_disable()
+  //
+  // Note that disabled modules are (usually) excluded from the results of
+  // _node_types_build() and thus from _totem_common_node_types() as well.
+  // In particular this ensures removal of the community local task menu item
+  // and the top-level list menu item for this type.
+  // @see totem_common_menu()
+  foreach ($modules as $module) {
+    if ($default_types = features_get_default('node', $module)) {
+      foreach ($default_types as $type_name => $type_info) {
+        // This db_update() technique is borrowed from #comment-4406062:
+        // @see http://drupal.org/node/1055460
+        $num_updated = db_update('node_type')->fields(
+          array(
+            'disabled' => 1,
+          )
+        )
+        ->condition('type', $type_name)
+        ->execute();
+
+        if ($num_updated) {
+          drupal_set_message(t("%module: The content type %type has been disabled.",
+            array(
+              '%module' => $module,
+              '%type' => $type_name,
+            )
+          ));
+        }
+      }
+    }
+  }
+}
+/**
+ * Implements hook_menu().
+ */
+function totem_common_menu() {
+
+  // Admin settings page.
+  $items['admin/' . variable_get('install_profile')] = array(
+    'title' => variable_get('site_name'),
+    'description' => 'Configure settings for the module.',
+    'file' => 'includes/totem_common.form.inc',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('totem_common_form_settings'),
+    'access callback' => 'user_access',
+    'access arguments' => array('administer totem_common'),
+    'type' => MENU_NORMAL_ITEM,
+    'weight' => -100,
+  );
+
+  // Featured community list page.
+  $items['communities/featured'] = array(
+    'title' => 'Featured',
+    'file' => 'includes/totem_common.pages.inc',
+    'page callback' => 'totem_common_page_community_featured',
+    'page arguments' => array(TRUE),
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  // RSS feed callback.
+  $items['rss/%/%'] =
+  $items['rss/%'] = array(
+    'title' => 'RSS Feed',
+    'file' => 'includes/totem_common.pages.inc',
+    'page callback' => 'totem_common_rss_feeder',
+    'page arguments' => array(1, 2),
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  // Top-level resources list callback.
+  $items['resources'] = array(
+    'title' => 'Resources',
+    'file' => 'includes/totem_common.pages.inc',
+    'page callback' => 'totem_common_page_resources',
+    'access callback' => 'user_is_logged_in',
+    'type' => MENU_CALLBACK,
+  );
+
+
+  $types = _totem_common_types_info(TRUE);
+
+  $types_exclude = array('page', 'media_collection');
+  $types_exclude_add = array('recent', 'orphan');
+  $types_exclude_community = array('community', 'orphan');
+  $types_exclude_user = array('user');
+  $types_exclude_toplevel = array('recent', 'orphan');
+
+  $weight = 0;
+
+  if (!empty($types)) {
+    foreach ($types as $type) {
+      if (!in_array($type->type, $types_exclude)) {
+
+        // Custom node add forms for these types.
+        if (!in_array($type->type, $types_exclude_add)) {
+          $items["community/add/{$type->path}"] =
+          $items["community/add/{$type->path}/%node"] = array(
+            'title' => 'Add ' . t($type->name),
+            'file' => 'includes/totem_common.form.inc',
+            'page callback' => 'totem_common_form_node',
+            'page arguments' => array(1, $type->type, 3),
+            'access callback' => 'node_access',
+            'access arguments' => array('create', $type->type),
+            'type' => MENU_CALLBACK,
+          );
+        }
+
+        // Add top-level content listing pages.
+        // checked this for: events, discuss, media, user, communities, resources
+        if (!in_array($type->type, $types_exclude_toplevel)) {
+          // Note that $type->path_plural already includes the "resources/"
+          // prefix for resource types.
+          $items["{$type->path_plural}"] = array(
+            'title' => $type->name_plural,
+            'file' => 'includes/totem_common.pages.inc',
+            'page callback' => 'totem_common_page_content_list',
+            'page arguments' => array($type),
+            'access callback' => 'user_is_logged_in',
+            'type' => MENU_CALLBACK,
+          );
+        }
+
+        if (!$type->is_resource) {
+
+          $item_callback_type = (!in_array($type->type, array('community', 'recent', 'orphan')) ? MENU_LOCAL_TASK : MENU_CALLBACK);
+
+          // Add tab item to community nodes.
+          if (!in_array($type->type, $types_exclude_community)) {
+            $item_args = array(
+              'title' => $type->name_plural,
+              'file' => 'includes/totem_common.pages.inc',
+              'page callback' => 'totem_common_node_community',
+              'access callback' => '_totem_common_menu_access_callback_op_community',
+              'access arguments' => array(1, 'view'),
+            );
+
+            $items["node/%node/{$type->path_plural}"] = array(
+              'page arguments' => array(1, $type->type, $type->name_plural, FALSE),
+              'type' => $item_callback_type,
+              'weight' => $weight,
+            ) + $item_args;
+
+            // Add NOJS menu callback for same.
+            // @see http://www.computerminds.co.uk/drupal-code/make-link-use-ajax-drupal-7-its-easy, _totem_common_url_outbound_alter(), totem_common_preprocess_node()
+            $items["node/%node/{$type->path_plural}/nojs"] = $items["node/%node/{$type->path_plural}"];
+
+            // Add AJAX menu callback for same.
+            $items["node/%node/{$type->path_plural}/ajax"] = array(
+              'page arguments' => array(1, $type->type, $type->name_plural, TRUE),
+              'type' => MENU_CALLBACK,
+              'delivery callback' => 'ajax_deliver',
+            ) + $item_args;
+
+          }
+
+          // Add tab item to user profiles.
+          if (!in_array($type->type, $types_exclude_user)) {
+            $items["user/%user/{$type->path_plural}"] = array(
+              'title' => $type->name_plural,
+              'page callback' => 'user_view_page',
+              'page arguments' => array(1, $type->type),
+              'access callback' => 'user_view_access',
+              'access arguments' => array(1),
+              'type' => $item_callback_type,
+              'weight' => $weight,
+            );
+          }
+        }
+
+        $weight++;
+      }
+    }
+  }
+
+  $items['node/%node/modal/edit'] = array(
+    'title' => 'Edit',
+    'description' => 'Make changes to this content.',
+    'file' => 'includes/totem_common.form.inc',
+    'page callback' => 'totem_common_form_node',
+    'page arguments' => array(3, 1, NULL),
+    'access callback' => 'node_access',
+    'access arguments' => array('update', 1),
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+  );
+
+  $items['node/%node/modal/delete'] = array(
+    'title' => 'Delete',
+    'description' => 'Delete this content permanently and irretrievably.',
+    'file' => 'includes/totem_common.form.inc',
+    'page callback' => 'totem_common_form_node',
+    'page arguments' => array(3, 1, NULL),
+    'access callback' => 'node_access',
+    'access arguments' => array('delete', 1),
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+  );
+
+  $description = t("Unpublish this content from the @community but don't delete it.", array('@community' => t('Community')));
+  $items['node/%node/modal/remove/%totem_common_context_community'] = array(
+    'title' => 'Remove',
+    'description' => $description,
+    'file' => 'includes/totem_common.form.inc',
+    'page callback' => 'totem_common_form_node',
+    'page arguments' => array(3, 1, 4),
+    'access callback' => 'node_access',
+    'access arguments' => array('update', 1),
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'tab_parent' => 'node/%',
+    'tab_root' => 'node/%',
+  );
+
+
+  // Callback to add/remove items in current user's session.
+  $items['user/%user/session'] = array(
+    'title' => 'Sessions',
+    'file' => 'includes/totem_common.pages.inc',
+    'page callback' => 'totem_common_page_user_session',
+    'page arguments' => array(1),
+    'access callback' => 'user_edit_access',
+    'access arguments' => array(1),
+    'type' => MENU_CALLBACK,
+  );
+
+  // Autocomplete callback for taxonomy fields.
+  $items['totem_common/autocomplete/taxonomy/%'] = array(
+    'file' => 'includes/totem_common.pages.inc',
+    'page callback' => 'totem_common_page_autocomplete_taxonomy',
+    'page arguments' => array(3, 4),
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+
+  return $items;
+}
+/**
+ * Implements hook_menu_alter().
+ */
+function totem_common_menu_alter(&$items) {
+
+  $items['node/%node/view']['title'] = 'Overview';
+}
+/**
+ * Implements hook_menu_local_tasks_alter().
+ */
+function totem_common_menu_local_tasks_alter(&$data, $router_item, $root_path) {
+
+  if ($router_item['path'] == 'community') {
+    // Add "Create a Community" button.
+    $path = 'community/add/community';
+    $item = menu_get_item($path);
+    if ($item['access']) {
+      $data['actions']['output'][] = array(
+        '#theme' => 'menu_local_action',
+        '#link' => array(
+          'title' => t('Create a @community', array('@community' => t('Community'))),
+          'href' => $path,
+          'localized_options' => array(
+            'attributes' => array(
+              'class' => array('btn', 'small', 'corners', 'add-community', ),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  if ($router_item['tab_root'] == 'node/%') {
+
+    $node = NULL;
+    foreach ($router_item['page_arguments'] as $ix => &$meta) {
+      if (is_object($meta)) {
+        $node = $meta;
+      }
+    }
+
+    if (!empty($node)) {
+      if ($node->type == 'community') {
+
+        // Add "Manage" link
+        $path = 'node/' . $node->nid . '/modal/edit';
+        $item = menu_get_item($path);
+
+        $item['title']             = 'Manage';
+        $item['localized_options'] = array(
+          'attributes' => array(
+            'class' => array('btn', 'small', 'corners', 'ctools-use-modal', drupal_html_class($item['title'])),
+          ),
+          // Attach destination, for sake of Cancel link added to node form.
+          // @see totem_common_form_node_form_alter()
+          'query' => drupal_get_destination(),
+        );
+
+        if ($item['access']) {
+          $data['actions']['output'][] = array(
+            '#theme' => 'menu_local_action',
+            '#link' => $item,
+          );
+        }
+      }
+    }
+  }
+}
+/**
+ * Implements hook_contextual_links_view_alter().
+ */
+function totem_common_contextual_links_view_alter(&$element, $items) {
+
+  // Use menu item's description param for the contextual link's title
+  // attribute. The jquery.tooltip plugin picks it up from there.
+  foreach ($items as $key => &$meta_item) {
+    foreach ($element['#links'] as $key => &$meta_link) {
+      if (!empty($meta_item['href']) && !empty($meta_link['href']) && $meta_item['href'] == $meta_link['href']) {
+        if (!empty($meta_item['description'])) {
+          $meta_link['attributes']['title'] = $meta_item['description'];
+        }
+      }
+    }
+  }
+
+  // Remove core contextual links in favor of modal versions.
+  unset($element['#links']['node-edit']);
+  unset($element['#links']['node-delete']);
+
+  // TODO: Globally, if we have to change modals to instead use standalone
+  // core edit/delete/whatever forms, take a look at this change:
+  // $element['#links']['node-modal-edit']['href'] = $items['node-edit']['href'];
+}
+/**
+ * Implements hook_theme().
+ */
+function totem_common_theme() {
+
+  $items = array(
+    'totem_common_node_community_box' => array(
+      'template' => 'theme/totem-common-node-community-box',
+      'file' => 'includes/totem_common.theme.inc',
+      'variables' => array(
+        'hook' => NULL,
+        'query' => NULL,
+        'header_block' => NULL,
+        'title_link' => NULL,
+        'more_link' => NULL,
+        'show_pager' => NULL,
+        'account' => NULL,
+        'is_own_profile' => NULL,
+      ),
+    ),
+    'totem_common_node_community_tab' => array(
+      'template' => 'theme/totem-common-node-community-tab',
+      'file' => 'includes/totem_common.theme.inc',
+      'variables' => array(
+        'type' => NULL,
+        'title' => NULL,
+        'content' => NULL,
+      ),
+    ),
+    'totem_common_paged_entities' => array(
+      'template' => 'theme/totem-common-paged-entities',
+      'variables' => array(
+        'query' => NULL,
+      ),
+    ),
+    'totem_common_page_communities' => array(
+      'template' => 'theme/totem-common-page-communities',
+      'file' => 'includes/totem_common.theme.inc',
+      'variables' => array(
+        'query' => NULL,
+        'counts' => array(),
+      ),
+    ),
+    'totem_common_page_community_featured' => array(
+      'template' => 'theme/totem-common-page-community-featured',
+      'variables' => array(
+        'query_teaser' => NULL,
+        'query_full' => NULL,
+      ),
+    ),
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_theme_registry_alter().
+ */
+function totem_common_theme_registry_alter(&$theme_registry) {
+  $path = drupal_get_path('module', 'totem_common');
+  _totem_common_theme_registry_alter($theme_registry, $path);
+}
+/**
+ * Implements hook_entity_delete(). Based on patch at
+ * http://drupal.org/node/1368386#comment-5815236.
+ */
+function totem_common_entity_delete($entity, $type) {
+  // Get id of entity.
+  list($entity_id, , ) = entity_extract_ids($type, $entity);
+  // Retrieve info for all entityreference fields.
+  $conditions = array('type' => 'entityreference');
+  $include_additional = array('include_inactive' => TRUE);
+  $fields            = field_read_fields($conditions, $include_additional);
+  // Loop through the fields.
+  foreach ($fields as $field) {
+    // Determine the target type of the field.
+    $target_type = $field['settings']['target_type'];
+    // Check if the field references the same type as the referenced entity.
+    if ($target_type == $type) {
+      $query      = new EntityFieldQuery();
+      // Select on the entity id in the target_id column.
+      $query->fieldCondition($field, 'target_id', $entity_id);
+      $references = $query->execute();
+      // Loop through the found entity types and ids.
+      foreach ($references as $referencing_type => $ids) {
+        // Load all referencing entities of this type.
+        $referencing_entities = entity_load($referencing_type, array_keys($ids));
+        foreach ($referencing_entities as $referencing_entity) {
+          // Get all the values in the field.
+          $items = $referencing_entity->{$field['field_name']}[$referencing_entity->language];
+          // Loop through them to delete the specific value of the field that
+          // references the deleted entity.
+          foreach ($items as $delta => $value) {
+            if ($value['target_id'] == $entity_id) {
+              unset($referencing_entity->{$field['field_name']}[$referencing_entity->language][$delta]);
+            }
+          }
+          // Store the modified entity. This should take care of all modules
+          // wanting to know about the changes and of flushing the relevant
+          // caches.
+          entity_save($referencing_type, $referencing_entity);
+        }
+      }
+    }
+  }
+}
+/**
+ * Implements hook_node_view().
+ */
+function totem_common_node_view($node, $view_mode, $langcode) {
+
+  // This is invoked at end of node_build_content()
+  // and only $node->content can be affected here.
+  foreach ($node->content as $key => $field) {
+    if (drupal_substr($key, 0, 1) == '#')
+      continue; // properties
+
+    if (isset($field['#field_type']) && in_array($field['#field_type'], array('image', 'file'))) {
+      foreach ($field['#items'] as $i => $item) {
+
+        // This check is needed for #field_type == 'file'.
+        if ($item['type'] == 'image') {
+          // Pull in whatever's not empty.
+          $image_args = array();
+          foreach (array('alt', 'title', 'width', 'height') as $attr) {
+            if (!empty($item[$attr])) {
+              $image_args[$attr] = $item[$attr];
+            }
+          }
+
+          // Reduce the number of images that GD has to generate.
+          if ($node->type == 'community') {
+            $image_args['styles'] = array('community_image', 'thumbnail');
+          }
+          $images = _totem_common_image_styles($item['uri'], $image_args);
+
+          // Attach our markup without overwriting anything else, so
+          // preprocess functions can still investigate metadata.
+          // Use 'sized_images' key so that we have a way in node tpl to check
+          // that we're dealing with an image (in case there are ever multiple
+          // files of different types in same node).
+          $node->content[$key][$i]['sized_images'] = $images;
+        }
+      }
+    }
+  }
+
+}
+/**
+ * Implements hook_node_view_alter().
+ */
+function totem_common_node_view_alter(&$build) {
+
+  if ($build['#view_mode'] !== 'full') {
+    return;
+  }
+
+
+  $node = &$build['#node'];
+
+  // Do some stuff to support OpenGraph sharing (facebook). Note that these
+  // properties should be added regardless of node_access or HTTP status.
+  // @see totem_common_preprocess_page()
+  $facebook_oauth_id = variable_get('fboauth_id');
+  if (!empty($facebook_oauth_id)) {
+
+    $teaser = variable_get('site_slogan');
+    if (!empty($node->body[$node->language])) {
+      $teaser = field_view_value('node', $node, 'body', $node->body[$node->language][0], 'teaser');
+      $teaser = drupal_render($teaser);
+    }
+
+    $og_base = array(
+      '#type' => 'html_tag',
+      '#tag' => 'meta',
+      '#attributes' => array(
+        'property' => NULL,
+        'content' => NULL,
+      ),
+    );
+
+    $og_properties = array(
+      // TODO: This app_id was bound to interactiverequest.com -- need better
+      // solution for future implementations. Note that app_id is exposed on
+      // /admin/config/people/fboauth as well.
+      'fb:app_id' => $facebook_oauth_id,
+      'og:type' => 'website',
+      'og:site_name' => variable_get('site_name'),
+      'og:url' => "http://{$_SERVER['HTTP_HOST']}/" . request_path(),
+      'og:title' => $node->title,
+      'og:description' => $teaser,
+    );
+
+    $og_meta = array();
+    $og_weight = 9999;
+    foreach ($og_properties as $property => $content) {
+      $og_meta = $og_base;
+      $og_meta['#weight'] = $og_weight;
+      $og_meta['#attributes']['property'] = $property;
+      $og_meta['#attributes']['content'] = trim(strip_tags($content));
+
+      $node->og_meta[$property] = $og_meta;
+      $og_weight++;
+    }
+
+    // Can't rely on _totem_common_get_community_context_node here because user
+    // may be viewing a 403 page (e.g. clicked a link from a FB post). Instead,
+    // extract community node from raw path data.
+    $node_community_context = _totem_common_get_node_from_request_path(1);
+    if (!empty($node_community_context)) {
+      // Needed to populate default images.
+      node_view($node_community_context, 'teaser');
+
+      $node_community_image = field_get_items('node', $node_community_context, 'field_image');
+      if (!empty($node_community_image)) {
+        $node->og_meta['og:image'] = $og_base;
+        $node->og_meta['og:image']['#attributes']['property'] = 'og:image';
+        $node->og_meta['og:image']['#attributes']['content'] = image_style_url('community_image', $node_community_image[0]['uri']);
+        $node->og_meta['og:image']['#weight'] = $og_weight;
+      }
+    }
+
+    // Add OpenGraph data to head.
+    foreach ($node->og_meta as $key => &$meta) {
+      drupal_add_html_head($meta, $key);
+    }
+  }
+
+}
+/**
+ * Implements hook_field_default_fields_alter().
+ */
+function totem_common_field_default_fields_alter(&$fields) {
+  if (isset($fields['node-community-field_image'])) {
+    $fields['node-community-field_image']['field_instance']['settings']['default_image'] = variable_get('totem_common_default_community_image_fid', 0);
+  }
+}
+
+// Hook implementations (Features).
+/**
+ * Implements hook_user_community_ENTITY_TYPE().
+ */
+function totem_common_user_community_community($vars) {
+
+  $nid_community = _totem_common_get_field_entityreference_values('user', $vars['account'], 'field_community');
+  if (empty($nid_community)) {
+    return NULL;
+  }
+
+  $efq_params = array(
+    'entity_type' => 'node',
+    'bundle' => 'community',
+    'property_conditions' => array(
+      array('column' => 'nid', 'value' => $nid_community),
+    ),
+    // 'field_conditions' => array(
+    //   array('field' => 'field_community', 'column' => 'target_id', 'value' => $vars['node']->nid),
+    // ),
+    'page_limit' => (!empty($vars['page_limit']) ? $vars['page_limit'] : PAGE_SIZE_LISTS_PAGE),
+    'property_order_by' => array(
+      array('column' => 'changed', 'direction' => 'DESC')
+    ),
+  );
+
+  $items['nodes'] = array(
+    'query' => _totem_common_efq($efq_params),
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_user_community_ENTITY_TYPE().
+ */
+function totem_common_user_community_orphan($vars) {
+
+  // Get user's list of active Community nids.
+  $nid_community = _totem_common_get_field_entityreference_values('user', $vars['account'], 'field_community');
+
+  // Get all content types.
+  $bundle = array();
+  $types = _totem_common_node_types();
+  foreach ($types as $type) {
+    if (!in_array($type->type, array('page', 'community'))) {
+      $bundle[] = $type->type;
+    }
+  }
+
+  // Get a list of user nodes that HAVE field_community values.
+  $efq_params = array(
+    'return' => 'entity_id',
+    'entity_type' => 'node',
+    'bundle' => $bundle,
+    'property_conditions' => array(
+      array('column' => 'uid', 'value' => $vars['account']->uid),
+    ),
+  );
+
+  if (!empty($nid_community)) {
+    $efq_params['field_conditions'][] = array('field' => 'field_community', 'column' => 'target_id', 'value' => $nid_community);
+  }
+
+  $nodes_with_community = _totem_common_efq($efq_params)->results;
+
+
+  unset($efq_params['return']);
+  unset($efq_params['field_conditions']);
+
+  if (!empty($nid_community) && !empty($nodes_with_community)) {
+    $efq_params['property_conditions'][] = array('column' => 'nid', 'value' => $nodes_with_community, 'operator' => 'NOT IN');
+  }
+
+  $nodes_without_community = _totem_common_efq($efq_params);
+
+
+  $items['nodes'] = array(
+    'query' => $nodes_without_community,
+  );
+
+  return $items;
+}

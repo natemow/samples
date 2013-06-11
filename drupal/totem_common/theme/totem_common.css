@@ -1,0 +1,115 @@
+/**
+ * Patch the version of clearfix included in core, since in a few cases it seems
+ * to create extraneous height after the clearfix'd element which induces an
+ * unneeded vertical scrollbar on parent element.
+ * Note also that core's implementation does not fully match the version in the
+ * web page that it references.
+ *
+ * @see system.base.css
+ */
+.clearfix:after {
+  content: "";
+}
+
+form .form-type-checkbox label.option,
+form .form-type-radio label.option {
+  display: inline !important;
+}
+form .form-type-checkbox input {
+  margin: 0 6px 0 0;
+  position: relative;
+  top: -3px;
+}
+
+div.ctools-modal-content .modal-content form.node-form .filter-wrapper,
+div.ctools-modal-content .modal-content form.node-community-form .vertical-tabs {
+  display: none;
+}
+
+/**
+ * Active state for AJAXified buttons.
+ * 'progress-disabled' added by core AJAX system;
+ * 'modal-form-submitting' added by modalFormBtnSubmitting()
+ * @see totem_common.js
+ */
+input.btn.progress-disabled,
+input.btn.modal-form-submitting {
+  background: #999 !important;
+}
+
+/**
+ * These such blocks may have jScrollPane enabled on them
+ * via 'custom-scroll' class.
+ */
+.region-sidebar-first .block-embed-type-list .pager-group .pager-data {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/**
+ * Some basic styles for jScrollPane elements to make them look decent.
+ */
+.custom-scroll .jspVerticalBar {
+  background: transparent;
+  right: 4px;
+  width: 12px;
+}
+
+.custom-scroll .jspTrack {
+  background: #e4e4e4;
+  border: 1px solid #c5c5c5;
+  -moz-border-radius: 15px;
+  -webkit-border-radius: 15px;
+  border-radius: 15px;
+}
+
+.custom-scroll .jspDrag {
+  background: #fff;
+  border: 1px solid #d6d6d6;
+  -moz-border-radius: 15px;
+  -webkit-border-radius: 15px;
+  border-radius: 15px;
+  left: -2px;
+  width: 12px;
+}
+
+.custom-scroll .jspVerticalBar .jspArrow {
+  height: 3px;
+}
+
+.custom-scroll .jspArrow {
+  background: none;
+  display: block;
+  text-indent: -20000px;
+}
+
+.custom-scroll .jspArrow.jspDisabled {
+  background: none;
+  cursor: default;
+}
+
+/**
+ * Patch an apparent bug in jScrollPane calculations.
+ * During its initialise() function, it determines isScrollableV by comparing
+ * .jspPane scrollHeight to original element's innerHeight(). Because jspPane
+ * is positioned absolute, the contents are wrapping weirdly and thus creating
+ * a taller combined height than they should. Force jspPane to initially be
+ * full width of jspContainer, so height calculation of contents is correct.
+ * Later, sizeVerticalScrollbar() will set an inline-style width to jspPane
+ * which overrides this.
+ */
+.custom-scroll .jspPane {
+  width: 100%;
+}
+
+/**
+ * Modal adjustments
+ */
+#modalBackdrop {
+  /*
+   * We cannot set height to 100% because it will measure against body height,
+   * which is effectively window height. Then if body is scrolled down at all
+   * when modal opens, the backdrop won't be tall enough.
+   */
+  width: 100% !important;
+}
