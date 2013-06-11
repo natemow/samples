@@ -1,1 +1,1 @@
-Various code samples from over the years. Tons more available if you'd care to see more.
+Various code samples from over the years. Lots more available if don't see what you're looking for.
