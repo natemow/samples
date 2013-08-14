@@ -1,4 +1,4 @@
-h1. D7 Starter Theme
+# D7 Starter Theme
 
 * HTML5 with backwards-compatibility Modernizr.js and normalization SCSS.
 * Built with Compass and Foundation 4.
