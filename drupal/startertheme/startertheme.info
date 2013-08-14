@@ -1,0 +1,39 @@
+
+name = Starter Theme
+description = A responsive theme built with Compass and Foundation 4.
+core = 7.x
+
+settings[toggle_logo] = 0 
+settings[toggle_name] = 1
+settings[toggle_slogan] = 1
+settings[toggle_node_user_picture] = 0 
+settings[toggle_comment_user_picture] = 0 
+settings[toggle_comment_user_verification] = 1
+settings[toggle_favicon] = 0 
+settings[toggle_main_menu] = 1
+settings[toggle_secondary_menu] = 1
+settings[default_favicon] = 0 
+
+stylesheets[all][] = assets/css/screen.css
+stylesheets[all][] = assets/css/ie.css
+stylesheets[print][] = assets/css/print.css
+
+scripts[] = assets/js/foundation.js
+scripts[] = assets/js/foundation.forms.js
+scripts[] = assets/js/startertheme.js
+
+regions[header] = Header
+regions[page_top] = Page top
+regions[page_bottom] = Page bottom
+
+regions[featured] = Featured
+regions[content] = Content
+regions[sidebar_first] = Sidebar first
+regions[sidebar_second] = Sidebar second
+
+regions[footer_firstcolumn] = Footer first column
+regions[footer_secondcolumn] = Footer second column
+regions[footer_thirdcolumn] = Footer third column
+regions[footer_fourthcolumn] = Footer fourth column
+
+regions[footer] = Footer

@@ -1,0 +1,148 @@
+
+form {
+  margin: 0; }
+
+// We use this to get basic styling on all basic form elements.
+input[type="text"],
+input[type="password"],
+input[type="date"],
+input[type="datetime"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"],
+input[type="email"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="time"],
+input[type="url"],
+textarea {
+  @include radius($global-radius); }
+
+.container-inline {
+  @include clearfix();
+
+  div.form-item,
+  div.form-actions {
+    display: block;
+    float: left;
+    margin: 0;
+    padding: 0;
+
+    input,
+    button {
+      margin: 0; }
+  }
+}
+
+div.messages,
+div.status,
+div.warning,
+div.error {
+  @include radius($global-radius);
+  background-image: none;
+  border: solid 1px #ccc;
+  margin: 0 15px ($column-gutter / 2) 0;
+  padding: ($column-gutter / 2);
+
+  ul li {
+    list-style: square outside none; }
+}
+
+label {
+  font-size: $base-font-size; }
+
+input.button.small, button.button.small {
+  padding: ($form-spacing / 2) emCalc(12px); }
+
+.container-inline div.form-actions input.button {
+  @include form-element();
+  @include single-transition(background);
+  background: lighten($primary-color, 40%);
+  border: 0;
+  color: #fff;
+  margin: 0 0 0 ($column-gutter / 2);
+  -webkit-box-shadow: none;
+  box-shadow: none;
+
+  &:hover {
+    background: lighten(lighten($primary-color, 30%), $button-function-factor); }
+}
+
+form.custom {
+  div.dropdown.custom {
+    @include radius($global-radius);
+    margin: 0;
+
+    .current {
+      cursor: pointer; }
+    .selector {
+      @include background-image(linear-gradient(#fff 0%, #8e8e8e 100%));
+      @include side-radius('right', $global-radius);
+      cursor: pointer;
+      height: 2.85em;
+      z-index: 100;
+
+      &.open { }
+      &:after, &:hover {
+        border-color: #fff transparent transparent transparent; }
+    }
+    ul {
+      @include radius($global-radius);
+      background: #fff;
+      border: 1px solid #ddd;
+      border-top: 0;
+      position: relative;
+
+      li {
+        &:last-child {
+          padding-bottom: $global-radius; }
+      }
+    }
+  }
+}
+
+// Contact forms.
+form.webform-client-form {
+  .form-item {
+    margin: 0 0 ($column-gutter / 2) 0;
+    padding-right: 15px;
+    position: relative;
+
+    &:first-child {
+      margin-top: 0; }
+    .field-suffix {
+      position: absolute;
+      top: 1em;
+      right: 0; }
+
+    input.error, textarea.error, select.error {
+      border: solid 1px #ccc; }
+  }
+  label {
+    @extend %element-invisible; }
+  input.form-text, textarea, select {
+    color: $body-bg;
+    font-size: $base-font-size;
+    font-weight: $body-font-weight-bold;
+    margin: 0; }
+  input.form-text {
+    height: auto;
+    padding: 0.5em; }
+  textarea {
+    height: emCalc(150px); }
+
+  // Class toggled by js to mimic placeholder attr in non-supporting browsers.
+  input.placeholder, textarea.placeholder {
+    color: #888 !important; }
+
+  &.custom div.dropdown.custom {
+    font-size: $base-font-size;
+
+    a.current {
+      color: inherit; }
+  }
+
+  .form-textarea-wrapper .grippie {
+    display: none; }
+}

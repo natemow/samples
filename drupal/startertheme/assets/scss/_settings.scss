@@ -1,0 +1,64 @@
+
+  @import "foundation/foundation-global";
+
+// Foundation and Compass Global variables.
+  $base-font-size: 18px;
+  $em-base: 18px;
+  $body-bg: #fff;
+  $body-font-color: #333;
+  $body-font-family: 'Raleway', 'Arial', 'Helvetica', sans-serif;
+  $body-font-weight: 400;
+  $body-font-weight-bold: 500;
+  $body-font-style: normal;
+  $body-font-small: ($base-font-size - 3);
+  $primary-color: #666;
+  $secondary-color: #333;
+  $global-radius: 5px;
+
+  @import url(http://fonts.googleapis.com/css?family=Raleway:#{$body-font-weight},#{$body-font-weight-bold});
+
+// Grid variables.
+  $row-width-px: 980px;
+  $row-width: emCalc($row-width-px);
+  $column-gutter: 1.875em;
+  $total-columns: 12;
+
+// Media Query variables.
+  $small-screen: 480px;
+  $medium-screen: 769px;
+  $large-screen: 980px;
+
+  $small-only: ""#{$screen}" and (min-width:1px) and (max-width:"#{$small-screen}")";
+  $medium-only: ""#{$screen}" and (min-width:"#{$small-screen}") and (max-width:"#{$medium-screen}")";
+  $small-to-medium: ""#{$screen}" and (min-width:1px) and (max-width:"#{$medium-screen}")";
+
+// Typography variables.
+  $header-font-color: #333;
+  $header-font-family: 'Raleway', sans-serif;
+  $header-font-weight: $body-font-weight-bold;
+  $header-line-height: 1.2;
+  $header-top-margin: 0;
+  $header-bottom-margin: .5em;
+  $header-text-rendering: optimizeLegibility;
+
+  $h1-font-size: emCalc(64px);
+  $h2-font-size: emCalc(48px);
+  $h3-font-size: emCalc(32px);
+  $h4-font-size: emCalc(24px);
+  $h5-font-size: emCalc($base-font-size);
+  $h6-font-size: emCalc($base-font-size);
+
+  $paragraph-font-family: inherit;
+  $paragraph-font-weight: $body-font-weight;
+  $paragraph-line-height: emCalc(28px);
+  $paragraph-margin-bottom: emCalc(32px);
+
+  $anchor-text-decoration: none;
+  $anchor-font-color: #c8560a; //#a0e2f2;
+  $anchor-font-color-hover: lighten($anchor-font-color, 10%);
+
+  $default-text-shadow-color: $body-bg;
+  $default-text-shadow-h-offset: 2px;
+  $default-text-shadow-v-offset: 2px;
+  $default-text-shadow-blur: 4px;
+  $default-text-shadow-spread: false;
