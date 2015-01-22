@@ -1,0 +1,3 @@
+name = C3
+scripts[] = demo_3.js
+files[] = demo_3.html

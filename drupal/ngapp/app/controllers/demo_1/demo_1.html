@@ -1,0 +1,5 @@
+<div ng-controller="c1 as c">
+  <p>This Angular controller will send a message to the C2 controller.</p>
+  <button type="button" class="btn btn-success btn-md" ng-click="c.doThing()">Send # to C2</button>
+  <p ng-if="c.message">{{ c.message }}</p>
+</div>

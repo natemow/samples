@@ -1,0 +1,3 @@
+name = C2
+scripts[] = demo_2.js
+files[] = demo_2.html

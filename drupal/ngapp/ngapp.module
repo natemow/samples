@@ -1,0 +1,179 @@
+<?php
+/**
+ * @file ngapp.module
+ */
+
+define('NGAPP_NAME', 'drupal-ngapp');
+
+/**
+ * Helper function to manage JS grouping and weight.
+ */
+function _ngapp_add_js($path, $options = array()) {
+  $weight = &drupal_static('ngapp_js_weight');
+  if (empty($weight)) {
+    $weight = 999;
+  }
+
+  $options = array_merge(array(
+    'group' => JS_DEFAULT,
+    'type' => 'file',
+    'weight' => $weight,
+    'scope' => 'footer',
+  ), $options);
+
+  drupal_add_js($path, $options);
+
+  $weight++;
+}
+
+/**
+ * Implements hook_block_init().
+ */
+function ngapp_init() {
+
+  // Register our AngularJS controllers.
+  $path = drupal_get_path('module', 'ngapp') . '/app/controllers';
+  $registry = &drupal_static('ngapp_controllers');
+  if (empty($registry)) {
+    $files = drupal_system_listing('/^' . DRUPAL_PHP_FUNCTION_PATTERN . '\.info$/', $path);
+    foreach ($files as $name => $file) {
+      $item['path'] = drupal_dirname($file->uri);
+      $info = drupal_parse_info_file($file->uri);
+      $item = array_merge($item, $info);
+
+      $errors = array();
+      if (empty($info['scripts'])) {
+        $errors[] = t('No scripts found in ngApp "%name"; add "scripts[]" to your .info file.', array(
+          '%name' => $name,
+        ));
+      }
+      if (empty($info['files'])) {
+        $errors[] = t('No files found in ngApp "%name"; add "files[]" to your .info file.', array(
+          '%name' => $name,
+        ));
+      }
+
+      foreach ($errors as $error) {
+        drupal_set_message($error, 'error', FALSE);
+      }
+      if (count($errors) == 0) {
+        $registry[$name] = $item;
+      }
+    }
+  }
+
+  // Init AngularJS app.
+  _ngapp_add_js('//ajax.googleapis.com/ajax/libs/angularjs/1.3.10/angular.min.js', array(
+    'group' => JS_LIBRARY,
+    'type' => 'external',
+    'scope' => 'header',
+  ));
+  _ngapp_add_js('//ajax.googleapis.com/ajax/libs/angularjs/1.3.10/angular-animate.min.js', array(
+    'group' => JS_LIBRARY,
+    'type' => 'external',
+    'scope' => 'header',
+  ));
+  _ngapp_add_js(array(
+    'ngapp' => array(
+      'name' => NGAPP_NAME,
+    ),
+  ), array(
+    'type' => 'setting',
+  ));
+  _ngapp_add_js(drupal_get_path('module', 'ngapp') . '/app/app.js');
+
+}
+/**
+ * Implements hook_block_info().
+ */
+function ngapp_block_info() {
+
+  $items = array();
+
+  $registry = &drupal_static('ngapp_controllers');
+  if (empty($registry)) {
+    return $items;
+  }
+
+  foreach ($registry as $name => $info) {
+    $items[$name] = array(
+      'info' => 'ngApp: ' . $info['name'],
+      'properties' => array(
+        'files' => array(),
+        'css' => array(),
+        'js' => array(),
+      ),
+    );
+
+    if (!empty($info['files'])) {
+      foreach ($info['files'] as $file) {
+        $items[$name]['properties']['files'][] = $info['path'] . '/' . $file;
+      }
+    }
+    if (!empty($info['stylesheets'])) {
+      foreach ($info['stylesheets'] as $media => $stylesheets) {
+        foreach ($stylesheets as $stylesheet) {
+          $items[$name]['properties']['css'][] = $info['path'] . '/' . $stylesheet;
+        }
+      }
+    }
+    if (!empty($info['scripts'])) {
+      foreach ($info['scripts'] as $script) {
+        $items[$name]['properties']['js'][] = $info['path'] . '/' . $script;
+      }
+    }
+  }
+
+  return $items;
+}
+/**
+ * Implements hook_block_view().
+ */
+function ngapp_block_view($delta) {
+
+  $block = NULL;
+  $block_info = ngapp_block_info();
+
+  if (!empty($block_info[$delta])) {
+    // Add controller templates.
+    $block['subject'] = $block_info[$delta]['info'];
+    $block['content'] = array(
+      '#attached' => array(
+        'css' => $block_info[$delta]['properties']['css'],
+      ),
+    );
+
+    if (!empty($block_info[$delta]['properties']['files'])) {
+      foreach ($block_info[$delta]['properties']['files'] as $file) {
+        $block['content']['templates'][] = array(
+          '#markup' => file_get_contents($file),
+        );
+      }
+    }
+
+    // Add controller scripts.
+    foreach ($block_info[$delta]['properties']['js'] as $script) {
+      _ngapp_add_js($script);
+    }
+  }
+
+  return $block;
+}
+/**
+ * Implements template_preprocess_html().
+ */
+function ngapp_preprocess_html(&$vars) {
+  $vars['attributes_array']['ng-app'] = NGAPP_NAME;
+  $vars['attributes_array']['ng-strict-di'] = 'true';
+  $vars['attributes_array']['ng-view'] = '';
+
+  $element = array(
+    '#tag' => 'base',
+    '#attributes' => array(
+      'href' => '/',
+    ),
+  );
+
+  drupal_add_html_head($element, 'ngapp_base');
+  drupal_add_css(drupal_get_path('module', 'ngapp') . '/ngapp.css');
+}

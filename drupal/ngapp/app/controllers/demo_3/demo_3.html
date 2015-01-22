@@ -1,0 +1,33 @@
+<div ng-controller="c3 as c">
+  <p>This Angular controller will persistently store selected filters in the browser's local storage, and use Angular $http.get to refresh data accordingly. The GET endpoint was created using contrib <a href="https://www.drupal.org/project/services">Services</a> mod, its packaged REST server and the contrib <a href="https://www.drupal.org/project/services_views">Services Views</a> mod.</p>
+  <p>
+    <button type="button"
+      ng-class="{true: 'btn btn-default', false: 'btn btn-warning'}[!c.filter_1]"
+      ng-click="c.filter_1 = !c.filter_1; c.doFilter('Term 1');">
+        Filter 1
+        <span ng-if="!c.filter_1" class="glyphicon glyphicon-play" aria-hidden="true"></span>
+        <span ng-if="c.filter_1" class="glyphicon glyphicon-pause" aria-hidden="true"></span>
+    </button>
+    <button type="button"
+      ng-class="{true: 'btn btn-default', false: 'btn btn-warning'}[!c.filter_2]"
+      ng-click="c.filter_2 = !c.filter_2; c.doFilter('Term 2');">
+        Filter 2
+        <span ng-if="!c.filter_2" class="glyphicon glyphicon-play" aria-hidden="true"></span>
+        <span ng-if="c.filter_2" class="glyphicon glyphicon-pause" aria-hidden="true"></span>
+    </button>
+    <button type="button"
+      ng-class="{true: 'btn btn-default', false: 'btn btn-warning'}[!c.filter_3]"
+      ng-click="c.filter_3 = !c.filter_3; c.doFilter('Term 3');">
+        Filter 3
+        <span ng-if="!c.filter_3" class="glyphicon glyphicon-play" aria-hidden="true"></span>
+        <span ng-if="c.filter_3" class="glyphicon glyphicon-pause" aria-hidden="true"></span>
+    </button>
+  </p>
+  <p ng-if="c.endpoint">GET {{ c.data.length}} records from <a href="{{ c.endpoint }}" target="_blank">{{ c.endpoint }}</a></p>
+  <div class="row" ng-repeat="row in c.data">
+    <div style="border-bottom:solid 1px #e7e7e7; padding: 20px;">
+      <a href="{{ row.path }}" target="_blank">{{ row.title }}</a>
+    </div>
+  </div>
+
+</div>
