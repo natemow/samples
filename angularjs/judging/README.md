@@ -1,13 +1,4 @@
-# Siemens Competition | Judging
-
-## Phalcon integration
-
-Relevant files:
-
-* `/app/config/routes.php` - relevant for supporting ngRoute.
-* `/public/.htaccess` - relevant for supporting ngRoute.
-* `/app/controllers/JudgingController.php` - Provides Volt templates to the app.
-* `/app/controllers/JapiController.php` - Provides RESTful endpoints for the Angular app to consume.
+# Judging
 
 ## AngularJS app ( *jgui* )
 
