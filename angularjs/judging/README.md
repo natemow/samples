@@ -2,7 +2,7 @@
 
 ## AngularJS app ( *jgui* )
 
-Note the `#jguiConfigData` script element in `index.volt`; global resource
+Note the `#jguiConfigData` script element in `index.html`; global resource
 paths, various module configs, etc. are controlled exclusively by this JSON.
 
 ## Assets
