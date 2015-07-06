@@ -2,10 +2,7 @@
 
 ## AngularJS app ( *jgui* )
 
-All of the AngularJS stuff lives in `/public/judging/app`. The main template for
-the judging app is at `/app/views-judging/judging/index.volt`.
-
-Note the `#jguiConfigData` script element in this file as well; global resource
+Note the `#jguiConfigData` script element in `index.volt`; global resource
 paths, various module configs, etc. are controlled exclusively by this JSON.
 
 ## Assets
