@@ -1,0 +1,8 @@
+<h1>{{ page.title }}</h1>
+
+<div ng-include="page.template" class="main-content"></div>
+
+<div ng-if="!page.template" class="main-content">
+  <div queue name="{{ page.params.key }}"></div>
+</div>
+

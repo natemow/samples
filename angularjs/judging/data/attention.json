@@ -1,0 +1,10 @@
+{
+  "data": [
+    { "id": "2001", "primary_discipline": 1 },
+    { "id": "2002", "primary_discipline": 1 },
+    { "id": "2003", "primary_discipline": 3 },
+    { "id": "2004", "primary_discipline": 2 },
+    { "id": "2005", "primary_discipline": 3 },
+    { "id": "2006", "primary_discipline": 2 }
+  ]
+}

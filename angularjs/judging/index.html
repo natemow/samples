@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="jgui" ng-strict-di="" ng-controller="controllerTemplate as template">
+  <head>
+    <title ng-bind="template.title"></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <meta charset="utf-8">
+    <base href="/">
+    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/assets/css/screen.css">
+  </head>
+  <body class="white">
+    <header class="container">
+      <nav class="navbar navbar-default">
+        <div class="navbar-header">
+          <a class="navbar-brand" href="/" ng-bind-html="template.brand"></a>
+          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#main-menu" aria-expanded="false">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+        </div>
+        <div class="collapse navbar-collapse" id="main-menu">
+          <ul template-menu class="nav navbar-nav"></ul>
+          <ul class="nav navbar-nav navbar-right">
+            <li class="dropdown">
+              <a class="dropdown-toggle" data-toggle="dropdown" href="#">
+                <i class="fa fa-user"></i>
+                <i class="fa fa-caret-down"></i>
+              </a>
+              <ul class="dropdown-menu">
+                <li><a><strong>Some user</strong></a></li>
+                <li><a href="/dashboard/account"><i class="fa fa-user fa-fw"></i> Account &amp; Password</a></li>
+                <li><a href="/dashboard/settings"><i class="fa fa-gear fa-fw"></i> Settings</a></li>
+                <li class="divider"></li>
+                <li><a href="/auth/logout"><i class="fa fa-sign-out fa-fw"></i> Logout</a></li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </nav>
+    </header>
+    <main class="container">
+      <div class="col-sm-12 page">
+        <div alerts></div>
+        <div ng-view=""></div>
+      </div>
+    </main>
+    <footer class="container">
+      <div class="col-sm-12">
+        <ul class="list-inline pull-right">
+          <li>Partner 1</li>
+          <li>Partner 2</li>
+        </ul>
+      </div>
+    </footer>
+
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+    <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.3.16/angular.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.3.16/angular-sanitize.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.3.16/angular-route.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.3.16/angular-animate.min.js"></script>
+    <script src="/app/vendor/angular-ui/ui-bootstrap-tpls-0.13.0.min.js"></script>
+
+    <script type="application/json" id="jguiConfigData">
+    {
+      "resources": {
+        "metadata": {
+          "options": "/data/meta.json"
+        },
+        "queues": {
+          "queue": "/data/queue.json",
+          "attention": "/data/attention.json",
+          "failure": "/data/failure.json"
+        },
+        "entry": {
+          "load": "/japi/testentry",
+          "setQueues": "/japi/testentry"
+        }
+      },
+      "template": {
+        "brand": "Demo | Judging",
+        "footer": "Partner 1 | Partner 2"
+      },
+      "pages": {
+        "error": {
+          "index": -1,
+          "title": "Error",
+          "template": "error.html"
+        },
+        "index": {
+          "index": 0,
+          "template": "index.html"
+        },
+        "queue": {
+          "index": 10,
+          "title": "My Queue"
+        },
+        "attention": {
+          "index": 20,
+          "title": "Needs Attention"
+        },
+        "failure": {
+          "index": 30,
+          "title": "Ineligible"
+        }
+      },
+      "settings": {
+        "animation": {
+          "duration": 400
+        },
+        "alerts": {
+          "autoFadeTimeout": 4000
+        },
+        "paging": {
+          "enabled": false
+        },
+        "dates": {
+          "format": "EEE, MMM d, y h:mm:ss a"
+        },
+        "scoring": {
+          "max": 5,
+          "criteria": [{
+              "label": "Scientific importance",
+              "description": "Does the project address an important scientific, technical, or mathematical question or major issue? Does the student's work demonstrate a high level of intellectual input, and is it innovative? Do the findings substantially add to the understanding of the area investigated?",
+              "weight": 15
+            }, {
+              "label": "Creativity",
+              "description": "Is the project original and imaginative? What is the origin of the student's interest in the topic? Did the student develop new solutions or procedures? To what extent were the student's talent and insight incorporated into the project? How did the student address any surprising or unforeseen developments?",
+              "weight": 25
+            }, {
+              "label": "Field knowledge",
+              "description": "Does the student demonstrate strong knowledge of the area of inquiry and the underlying scientific or mathematical issues?",
+              "weight": 15
+            }, {
+              "label": "Comprehensiveness",
+              "description": "Are sufficient details given so that others can replicate the work? If the work is experimental, are the variables and controls clearly defined? Did the student use the correct quantitative measures? Are the procedures well-defined? Were measuring tools chosen and used appropriately? Does the Research Report fully explain the project itself or is further explanation needed?",
+              "weight": 10
+            }, {
+              "label": "Interpretation",
+              "description": "Has the student stated the interpretations and conclusions clearly? How scientifically reasonable and credible are the data, interpretations, and conclusions? Do the conclusions and interpretations follow from the results presented? Can claims of novelty or improvement be justified? What are the limits of the interpretations and the conclusions? Are there alternative conclusions that fit the results?",
+              "weight": 15
+            }, {
+              "label": "Literature review",
+              "description": "Does the report reference appropriate related works and place the study in a proper context? Are all sources used in the research listed as references? Are the references cited within the text?",
+              "weight": 5
+            }, {
+              "label": "Future work",
+              "description": "Is there a discussion of future or follow-up research? If so, what further data would be needed? What are possible applications of the work?",
+              "weight": 5
+            }, {
+              "label": "Clarity of expression",
+              "description": "Is the project understandable? Is the material presented logically and coherently? Are the key points, problems, and solutions stated clearly and precisely? Does the student use tables and figures appropriately? Was the Research Report carefully proofread for spelling and grammar?",
+              "weight": 5
+            }, {
+              "label": "Presentation",
+              "description": "Is the method of presentation consistent with the nature of the work and with scientific practice in the discipline involved?",
+              "weight": 5
+            }
+          ]
+        }
+      }
+    }
+    </script>
+    <script src="/app/modules/config/config.js"></script>
+    <script src="/app/modules/config/ui-bootstrap.js"></script>
+    <script src="/app/modules/entry/entry.js"></script>
+    <script src="/app/modules/queue/queue.js"></script>
+    <script src="/app/modules/template/template.js"></script>
+    <script src="/app/jgui.js"></script>
+  </body>
+</html>

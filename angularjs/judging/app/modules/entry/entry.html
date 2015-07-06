@@ -1,0 +1,114 @@
+<div class="modal-header">
+  <h3 class="modal-title">{{ queue.label }}: <em>#{{ entry.id }}</em></h3>
+</div>
+<div class="modal-body">
+  <div tabset>
+    <div tab ng-repeat="tab in tabs" heading="{{ tab.title }}" active="tab.active">
+      <div ng-switch="tab.title" class="row">
+
+      <!--
+      Scoring tab content
+      -->
+        <div ng-switch-when="Scoring" class="criteria">
+          <div class="col-sm-6 form-horizontal">
+            <div class="form-group"
+              ng-repeat="criteria in entry.scoring"
+              ng-mouseover="entry.actions.criteria.toggle(criteria)">
+              <label class="col-sm-6 control-label">{{ criteria.label }} <span class="label label-info pull-right">{{ criteria.weight }}%</span></label>
+              <div class="col-sm-6">
+                <div
+                  ng-class="{ disabled: criteria.isReadonly }"
+                  class="form-control-static score-widget">
+                  <span rating class="slider"
+                    ng-model="criteria.rate"
+                    max="criteria.max"
+                    readonly="criteria.isReadonly"
+                    on-hover="entry.actions.criteria.set(criteria, value)"></span>
+                  <i class="fa fa-ban" ng-show="entry.actions.criteria.animate.show(criteria)" ng-click="entry.actions.criteria.set(criteria, 0)"></i>
+                  <span class="label"
+                    ng-class="entry.actions.criteria.animate.classes(criteria)"
+                    ng-show="entry.actions.criteria.animate.show(criteria)">{{ criteria.percent }}%</span>
+                </div>
+              </div>
+            </div>
+            <div class="criteria-avg">
+              <label class="col-sm-6 control-label">
+                <span class="pull-right">Score</span>
+              </label>
+              <div class="col-sm-6">
+                <div class="form-control-static">
+                  <span
+                    ng-class="entry.actions.criteria.animate.classes({ percent: criteriaAverage })"
+                    class="label">{{ criteriaAverage }}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="form-group clearfix">
+              <label class="control-label sr-only">Notes</label>
+              <textarea ng-model="entry.actionNote" class="form-control" rows="8" placeholder="Please provide some notes on your decisions."></textarea>
+              <small ng-if="queue.key === 'queue' && !entry.actionNote" class="help-block pull-right"><a href="" ng-click="entry.actions.setNotesStub()">Use starter template</a></small>
+            </div>
+            <div ng-if="criteriaActive.label" class="criteria-desc">
+              <h4>{{ criteriaActive.label }}</h4>
+              <p class="bg-info text-info weight">This criteria is worth <span class="label label-info">{{ criteriaActive.weight }}%</span> of the total score.</p>
+              <p>{{ criteriaActive.description }}</p>
+            </div>
+          </div>
+        </div>
+
+      <!--
+      Notes tab content
+      -->
+        <div ng-switch-when="Notes" class="col-sm-12">
+          <div class="form-group">
+            <label class="control-label sr-only">Notes</label>
+            <textarea ng-model="entry.actionNote" class="form-control" rows="8" placeholder="Please provide some notes on your decisions."></textarea>
+            <small ng-if="queue.key === 'queue' && !entry.actionNote" class="help-block pull-right"><a href="" ng-click="entry.actions.setNotesStub()">Use starter template</a></small>
+          </div>
+          <table class="table table-condensed table-striped">
+            <tbody>
+              <tr ng-repeat="note in entry.notes | orderBy: '-date'">
+                <td class="key-note" ng-bind-html="note.note"></td>
+                <td class="key-date text-right">{{ note.date | date:jguiConfigData.settings.dates.format }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      <!--
+      TODO: Print $scope.entry objects per tab section...content per will be
+      different depending on how client wants to present entry data to judges.
+      -->
+        <div ng-switch-default class="col-sm-12">
+          <p><em>{{ queue.label }} - {{ tab.title }}</em> stuff goes here.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-footer">
+
+  <button
+    ng-if="queue.key === 'queue'"
+    ng-click="entry.actions.setScore(); modalSubmit();"
+    class="btn btn-md btn-success"><i class="fa fa-gavel"></i> Save Score</button>
+  <button
+    ng-if="queue.key !== 'queue'"
+    ng-click="entry.actions.setQueues('queue'); modalSubmit();"
+    class="btn btn-md btn-success"><i class="fa fa-gavel"></i> Move to Queue</button>
+  <button
+    ng-if="queue.key !== 'attention'"
+    ng-click="entry.actions.setQueues('attention');  modalSubmit();"
+    class="btn btn-md btn-warning"><i class="fa fa-refresh"></i> Needs Attention</button>
+  <button
+    ng-if="queue.key !== 'failure'"
+    ng-click="entry.actions.setQueues('failure'); modalSubmit();"
+    class="btn btn-md btn-danger"><i class="fa fa-ban"></i> Mark as Ineligible</button>
+  <button
+    ng-click="modalDismiss();"
+    class="btn btn-info">Cancel</button>
+
+</div>

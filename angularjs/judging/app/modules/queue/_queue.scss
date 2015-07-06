@@ -1,0 +1,79 @@
+
+// Extends.
+%queue-links-no-decorate {
+  border: 0;
+  outline: 0;
+  text-decoration: none;
+  display: block;
+  cursor: pointer;
+}
+
+// Queue search.
+.queue-search {
+  a,
+  a:focus,
+  a:visited {
+    @extend %queue-links-no-decorate;
+  }
+
+  &.panel-default > .panel-heading .badge {
+    background-color: $dark-gray;
+  }
+
+  label {
+    font-weight: normal;
+  }
+}
+
+// Queue tables.
+table {
+
+  .text-right {
+    padding-right: $mrg;
+    color: black;
+  }
+
+  &.queue {
+    &.table-striped>tbody>tr:nth-of-type(odd) {
+      background-color: $lighter-gray;
+    }
+    &.table-striped>tbody>tr:hover {
+      background-color: $bootstrap-info;
+      cursor: pointer;
+    }
+  }
+
+  caption {
+    padding: ($base * 2) 0;
+  }
+
+  thead {
+    a,
+    a:focus,
+    a:visited {
+      @extend %queue-links-no-decorate;
+    }
+  }
+
+  tbody {
+    td {
+      border-color: $bootstrap-border-color;
+      white-space: nowrap;
+    }
+  }
+
+  th, td {
+    font-weight: normal;
+    border: 0;
+
+    &.key-id {
+      width: 60px;
+    }
+    &.key-status {
+      width: 80px;
+    }
+    &.key-date {
+      width: 120px;
+    }
+  }
+}

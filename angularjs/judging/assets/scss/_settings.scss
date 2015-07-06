@@ -1,0 +1,41 @@
+// sass settings and variables
+
+// breakpoints
+$break-tablet: (max-width: 768px);
+$break-small: (max-width 500px);
+
+// susy grid default
+$susy: (
+  container: 100%,
+  columns: 12,
+  gutters: 0,
+  gutter-position: inside,
+  global-box-sizing: border-box,
+);
+
+* { box-sizing: border-box }
+
+// colors
+$black: #000;
+$white: #fff;
+$darker-gray: #222;
+$dark-gray: #555;
+$gray: #888;
+$light-gray: #bbb;
+$lighter-gray: #f8f8f8;
+
+$bootstrap-info: #d9edf7;
+$bootstrap-border-color: #e7e7e7;
+$bootstrap-panel-border-color: #ddd;
+$bootstrap-panel-background-color: #f5f5f5;
+
+// layout variables
+$base: 16px; // our base font-size;
+$mrg: 12px; // most padding and margins should be a multiple of $mrg
+$hmrg: ($mrg * 0.50);
+$dmrg: ($mrg * 2.0);
+$qmrg: ($mrg * 0.25);
+
+$radius: $hmrg;
+$text: $darker-gray;
+$bg: $white;

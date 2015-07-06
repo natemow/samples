@@ -1,0 +1,10 @@
+{
+  "data": [
+    { "id": "1001", "primary_discipline": 1 },
+    { "id": "1002", "primary_discipline": 2 },
+    { "id": "1003", "primary_discipline": 2 },
+    { "id": "1004", "primary_discipline": 1 },
+    { "id": "1005", "primary_discipline": 1 },
+    { "id": "1006", "primary_discipline": 1 }
+  ]
+}

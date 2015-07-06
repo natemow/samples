@@ -1,0 +1,23 @@
+
+// Animate all Angular "re-binds".
+%animate-angular-enter-leave {
+  .ng-enter {
+    @include transition(opacity .75s);
+    opacity: 0;
+  }
+  .ng-enter-active {
+    opacity: 1;
+  }
+  .ng-leave {
+    @include transition(opacity 0s);
+  }
+  .ng-leave-active {
+    opacity: 0;
+  }
+}
+
+%drop-shadow {
+  box-shadow:         0 ($base * .25) ($base * .5) 0 rgba(0, 0, 0, 0.25);
+  -moz-box-shadow:    0 ($base * .25) ($base * .5) 0 rgba(0, 0, 0, 0.25);
+  -webkit-box-shadow: 0 ($base * .25) ($base * .5) 0 rgba(0, 0, 0, 0.25);
+}

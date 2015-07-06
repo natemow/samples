@@ -1,0 +1,69 @@
+
+// Modal styles.
+.modal {
+  .modal-header {
+    border: 0;
+    padding-bottom: 0;
+  }
+
+  .modal-body {
+    min-height: 200px;
+
+    .tab-content {
+      margin-top: $base;
+    }
+  }
+
+  .modal-footer {
+    border: 0;
+  }
+}
+
+// "Gavel" scoring widget for a category.
+.score-widget {
+  padding-top: 4px;
+
+  > span.slider {
+    display: block;
+    font-weight: normal;
+    float: left;
+    padding-right: $hmrg;
+    border: 0;
+    outline: 0;
+  }
+
+  .fa {
+    cursor: pointer;
+
+    // Set hover state for the scoring "gavel" icon.
+    &.fa-gavel-off {
+      color: $light-gray;
+    }
+  }
+  &.disabled .fa {
+    cursor: default;
+  }
+
+}
+
+.criteria {
+  label {
+    &.control-label {
+      text-align: left;
+    }
+    span {
+      //font-weight: normal;
+    }
+  }
+
+  .criteria-avg {
+    border-top: solid 1px $bootstrap-panel-border-color;
+  }
+
+  .criteria-desc {
+    .weight {
+      padding: $mrg;
+    }
+  }
+}
+

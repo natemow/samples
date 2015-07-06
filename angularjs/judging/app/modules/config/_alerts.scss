@@ -1,0 +1,24 @@
+
+#alerts {
+  position: fixed;
+  z-index: 1000;
+  top: 20%;
+  margin-left: -15px;
+  min-width: 392px; // TODO: Update this per breakpoint.
+  width: 40%;
+
+  .alert {
+    @extend %drop-shadow;
+    border: solid 1px darken($bootstrap-border-color, 20);
+  }
+
+  ul {
+    margin: 0 0 0 $base - 2;
+    padding: 0;
+
+    li {
+      margin: 0;
+      padding: 0;
+    }
+  }
+}

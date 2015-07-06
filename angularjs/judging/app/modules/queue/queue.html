@@ -1,0 +1,93 @@
+
+<div entry-modal></div>
+
+<div ng-if="data.length > 0" class="panel panel-info queue-search">
+  <div class="panel-heading">
+    <span class="fa pull-right" ng-class="{ 'fa-caret-up': filters.panelOpen, 'fa-caret-down': !filters.panelOpen }"></span>
+    <a
+      ng-click="filters.panelToggle(!filters.panelOpen)"
+      href="" data-toggle="collapse" data-target="#search-panel" aria-expanded="{{ filters.panelOpen }}" aria-controls="search-panel"><span class="fa fa-search"></span> Showing <span class="badge">{{ (data | filter: search:strict | filter: filters.match(search, 'primary_discipline')).length }}</span> entries</a>
+  </div>
+  <div class="panel-body panel-collapse collapse" ng-class="{ 'in': filters.panelOpen }" id="search-panel">
+    <form class="form-horizontal">
+      <div class="form-group">
+        <label for="search-id" class="col-sm-2 col-sm-offset-2 control-label">ID #</label>
+        <div class="col-sm-4">
+          <input ng-model="search.id" type="text" class="form-control" id="search-id">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="search-status" class="col-sm-2 col-sm-offset-2 control-label">Status</label>
+        <div class="col-sm-4">
+          <select ng-model="search.statusActionTaken" class="form-control" id="search-status">
+            <option value=""></option>
+            <option value="true">yep</option>
+            <option value="false">nope</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="search-discipline-1" class="col-sm-2 col-sm-offset-2 control-label">Discipline</label>
+        <div class="col-sm-4">
+          <select class="form-control" id="search-discipline-1"
+            ng-options="value as label for (value, label) in filters.options.primary_disciplines"
+            ng-model="search.primary_discipline"
+            ng-change="filters.change(search, 'primary_discipline')">
+            <option value=""></option>
+          </select>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<ul pagination
+  ng-model="pager.currentPage"
+  ng-show="pager.show"
+  ng-change="$emit('pagerClicked')"
+  total-items="data.length"></ul>
+
+<table class="table table-condensed table-striped table-hover queue">
+  <caption ng-if="data.length === 0" class="text-center">
+    <p>The <em>{{ queue.label }}</em> queue is empty!</p>
+  </caption>
+  <thead ng-if="data.length > 0">
+    <th class="key-id text-right">
+      <a ng-click="actions.sort.order('id')">
+        <span class="fa" ng-show="actions.sort.icon.show('id')" ng-class="actions.sort.icon.classes"></span> ID
+      </a>
+    </th>
+    <th class="key-status text-right">
+      <a ng-click="actions.sort.order('statusActionTaken')">
+        <span class="fa" ng-show="actions.sort.icon.show('statusActionTaken')" ng-class="actions.sort.icon.classes"></span> Status
+      </a>
+    </th>
+    <th class="key-discipline-1">
+      <a ng-click="actions.sort.order('')" class="pull-right">
+        <span class="fa" ng-show="actions.sort.icon.show('')" ng-class="{ 'fa fa-check': actions.sort.predicate === '' }"></span> Unsorted
+      </a>
+      <a ng-click="actions.sort.order('primary_discipline')">Discipline
+        <span class="fa" ng-show="actions.sort.icon.show('primary_discipline')" ng-class="actions.sort.icon.classes"></span>
+      </a>
+    </th>
+  </thead>
+  <tbody ng-if="data.length > 0">
+    <tr
+      id="entry-{{ row.id }}"
+      ng-repeat="row in filtered = (
+        data | filter: search:strict | filter: filters.match(search, 'primary_discipline')
+      ) | orderBy: actions.sort.predicate:actions.sort.reverse | paginationChange: pager.currentPage | limitTo: pager.itemsPerPage"
+      ng-click="actions.loadEntry(queue, row)"
+      ng-class="{'warning': !row.activeModal && row.statusActionTaken, 'info': row.activeModal }">
+      <td class="text-right">{{ row.id }}</td>
+      <td class="text-right">{{ row.statusActionTaken ? 'yep' : 'nope' }}</td>
+      <td>{{ filters.options.primary_disciplines[row.primary_discipline] }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<ul pagination
+  ng-model="pager.currentPage"
+  ng-show="pager.show"
+  ng-change="$emit('pagerClicked')"
+  total-items="data.length"></ul>
