@@ -1,6 +1,6 @@
 /**
  * @file
- * JS code for Competition Judging Judging jgui.
+ * JS code for Competition Judging jgui.
  */
 
 (function() {
