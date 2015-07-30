@@ -1,6 +1,6 @@
 /**
  * @file
- * JS code for Siemens Competition Judging jgui.
+ * JS code for Competition Judging Judging jgui.
  */
 
 (function() {
